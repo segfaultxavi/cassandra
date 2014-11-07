@@ -267,7 +267,7 @@ int main (int argc, char *argv[]) {
 	SDL_Event e;
 	bool quit = false;
 	while (!quit) {
-		while (SDL_PollEvent (&e)) {
+		if (SDL_WaitEvent (&e)) {
 			switch (e.type) {
 			case SDL_QUIT:
 				quit = true;
