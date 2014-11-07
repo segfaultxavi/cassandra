@@ -1,4 +1,10 @@
 #define _CRTDBG_MAP_ALLOC
+#ifdef _DEBUG
+#ifndef DBG_NEW
+#define DBG_NEW new ( _NORMAL_BLOCK , __FILE__ , __LINE__ )
+#define new DBG_NEW
+#endif
+#endif  // _DEBUG
 #include <stdlib.h>
 #include <crtdbg.h>
 #include <stdio.h>
@@ -199,8 +205,8 @@ struct TrapCell : Cell {
 		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
 		for (int sx = 0; sx < 3; sx++) {
 			for (int sy = 0; sy < 3; sy++) {
-				rect.x = (x + sx / 3.f + 1 / 7.f) * CELL_WIDTH;
-				rect.y = (y + sy / 3.f + 1 / 7.f) * CELL_WIDTH;
+				rect.x = (int)((x + sx / 3.f + 1 / 7.f) * CELL_WIDTH);
+				rect.y = (int)((y + sy / 3.f + 1 / 7.f) * CELL_WIDTH);
 				SDL_RenderFillRect (renderer, &rect);
 			}
 		}
@@ -234,7 +240,7 @@ void recurse (State *state, float alpha) {
 			float p = alpha * probs[i] / total_prob;
 			undo = state->input (actions[i]);
 			float p2 = 1.f - p; 
-			p2 = 1.f - SDL_pow (p2, 8.0);
+			p2 = 1.f - (float)SDL_pow (p2, 8.0);
 			state->render_background (p2 * 0.8f);
 			state->render_cass (p2 * 0.8f);
 			recurse (state, p);
@@ -290,6 +296,7 @@ int main (int argc, char *argv[]) {
 
 	SDL_Event e;
 	bool quit = false;
+	Undo *undo;
 	while (!quit) {
 		if (SDL_WaitEvent (&e)) {
 			switch (e.type) {
@@ -297,7 +304,8 @@ int main (int argc, char *argv[]) {
 				quit = true;
 				break;
 			case SDL_KEYDOWN:
-				current_state.input (e.key.keysym.sym, &quit);
+				undo = current_state.input (e.key.keysym.sym, &quit);
+				delete undo;
 				break;
 			}
 		}
