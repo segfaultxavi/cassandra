@@ -29,7 +29,7 @@ char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
 	"###.#.#.##.........#",
 	"#.....#..#.........#",
 	"#.#.#.##...........#",
-	"#........#.........#",
+	"#......X.#.........#",
 	"#.###.##.#.........#",
 	"#.#.#.#..#.........#",
 	"#...#C#.###.#.#.#.##",
@@ -192,6 +192,25 @@ struct WallCell : Cell {
 	}
 };
 
+struct TrapCell : Cell {
+	virtual void render (int x, int y, float alpha) {
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
+		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
+		for (int sx = 0; sx < 3; sx++) {
+			for (int sy = 0; sy < 3; sy++) {
+				rect.x = (x + sx / 3.f + 1 / 7.f) * CELL_WIDTH;
+				rect.y = (y + sy / 3.f + 1 / 7.f) * CELL_WIDTH;
+				SDL_RenderFillRect (renderer, &rect);
+			}
+		}
+	};
+
+	virtual bool can_pass () {
+		return true;
+	}
+};
+
 void recurse (State *state, float alpha) {
 	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT };
 	static const int weights[4] = { 3, 2, 1, 2 };
@@ -263,6 +282,7 @@ int main (int argc, char *argv[]) {
 			case '#': current_state.map[x][y] = new WallCell (); break;
 			case 'C': current_state.cass.x = x; current_state.cass.y = y; // Deliverate fallthrough
 			case '.': current_state.map[x][y] = new EmptyCell (); break;
+			case 'X': current_state.map[x][y] = new TrapCell (); break;
 			}
 		}
 	}
