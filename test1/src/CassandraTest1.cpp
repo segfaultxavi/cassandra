@@ -19,7 +19,6 @@ struct Cell {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
 		SDL_RenderFillRect (renderer, &rect);
 	};
-	virtual Cell *clone () = 0;
 	virtual bool can_pass () = 0;
 	virtual ~Cell () {}
 };
@@ -55,9 +54,11 @@ struct Cass {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
 		if (alpha == 1.f) {
 			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+			SDL_SetTextureColorMod (tex, 255, 255, 0);
 		} else {
 			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_ADD);
 			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
+			SDL_SetTextureColorMod (tex, 255, 255, 255);
 		}
 		SDL_RenderCopy (renderer, tex, NULL, &rect);
 	}
@@ -65,24 +66,21 @@ struct Cass {
 
 SDL_Texture *Cass::tex;
 
+struct Undo {
+	int cass_x, cass_y;
+	int last_dir;
+
+	Undo (int cass_x, int cass_y, int last_dir) {
+		this->cass_x = cass_x;
+		this->cass_y = cass_y;
+		this->last_dir = last_dir;
+	}
+};
+
 struct State {
 	Cass cass;
 	int last_dir;
 	Cell *map[MAP_WIDTH][MAP_HEIGHT];
-
-	State *clone () {
-		State *newstate = new State ();
-		int x, y;
-		for (x = 0; x < MAP_WIDTH; x++) {
-			for (y = 0; y < MAP_HEIGHT; y++) {
-				newstate->map[x][y] = map[x][y]->clone ();
-			}
-		}
-		newstate->cass.x = cass.x;
-		newstate->cass.y = cass.y;
-
-		return newstate;
-	}
 
 	~State () {
 		int x, y;
@@ -113,52 +111,62 @@ struct State {
 		return false;
 	}
 
-	bool input (SDL_Keycode keycode, bool *quit = NULL) {
+	Undo *input (SDL_Keycode keycode, bool *quit = NULL) {
+		Undo *undo = NULL;
 		switch (keycode) {
 		case SDLK_ESCAPE:
 			if (quit) *quit = true;
 			break;
 		case SDLK_UP:
 			if (map[cass.x][cass.y - 1]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir);
 				cass.y--;
 				last_dir = 0;
-			} else return false;
+			}
 			break;
 		case SDLK_DOWN:
 			if (map[cass.x][cass.y + 1]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir);
 				cass.y++;
 				last_dir = 2;
-			} else return false;
+			}
 			break;
 		case SDLK_LEFT:
 			if (map[cass.x - 1][cass.y]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir);
 				cass.x--;
 				last_dir = 3;
-			}  else return false;
+			}
 			break;
 		case SDLK_RIGHT:
 			if (map[cass.x + 1][cass.y]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir);
 				cass.x++;
 				last_dir = 1;
-			} else return false;
+			}
 			break;
-		default:
-			return false;
 		}
-		return true;
+		return undo;
 	}
 
-	void render (float alpha) {
+	void render_background (float alpha) {
 		for (int x = 0; x < MAP_WIDTH; x++) {
 			for (int y = 0; y < MAP_HEIGHT; y++) {
 				map[x][y]->render (x, y, alpha);
 			}
 		}
+	}
+
+	void render_cass (float alpha) {
 		cass.render (alpha);
 	}
-};
 
-State current_state;
+	void undo (Undo *undo) {
+		cass.x = undo->cass_x;
+		cass.y = undo->cass_y;
+		last_dir = undo->last_dir;
+	}
+};
 
 struct EmptyCell : Cell {
 	virtual void render (int x, int y, float alpha) {
@@ -166,10 +174,6 @@ struct EmptyCell : Cell {
 		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 		Cell::render (x, y, alpha);
 	};
-
-	virtual Cell *clone () {
-		return new EmptyCell (*this);
-	}
 
 	virtual bool can_pass () {
 		return true;
@@ -183,10 +187,6 @@ struct WallCell : Cell {
 		Cell::render (x, y, alpha);
 	};
 
-	virtual Cell *clone () {
-		return new WallCell (*this);
-	}
-
 	virtual bool can_pass () {
 		return false;
 	}
@@ -198,7 +198,7 @@ void recurse (State *state, float alpha) {
 	int probs[4], i;
 	float total_prob = 0.f;
 
-	if (alpha < 0.1f) return;
+	if (alpha < 0.01f) return;
 
 	for (i = 0; i < 4; i++) {
 		if (state->can_input (actions[i])) {
@@ -211,13 +211,16 @@ void recurse (State *state, float alpha) {
 
 	for (i = 0; i < 4; i++) {
 		if (probs[i] > 0) {
-			State *s = state->clone ();
+			Undo *undo;
 			float p = alpha * probs[i] / total_prob;
-			s->input (actions[i]);
-			s->render (p * 0.8f);
-			s->last_dir = i;
-			recurse (s, p);
-			delete (s);
+			undo = state->input (actions[i]);
+			float p2 = 1.f - p;
+			p2 = 1.f - p2 * p2 * p2 * p2 * p2;
+			state->render_background (p2 * 0.8f);
+			state->render_cass (p2 * 0.8f);
+			recurse (state, p);
+			state->undo (undo);
+			delete undo;
 		}
 	}
 }
@@ -248,11 +251,12 @@ int main (int argc, char *argv[]) {
 	SDL_Surface *surf = SDL_CreateRGBSurface (SDL_SWSURFACE, CELL_WIDTH, CELL_HEIGHT, 32, 0, 0, 0, 0);
 	SDL_FillRect (surf, NULL, 0x00000000);
 	SDL_Rect rect = { 5, 5, CELL_WIDTH - 10, CELL_HEIGHT - 10 };
-	SDL_FillRect (surf, &rect, 0xFFFFFF00); // ARGB
+	SDL_FillRect (surf, &rect, 0xFFFFFFFF); // ARGB
 	Cass::tex = SDL_CreateTextureFromSurface (renderer, surf);
 	SDL_FreeSurface (surf);
 
 	int x, y;
+	State current_state;
 	for (x = 0; x < MAP_WIDTH; x++) {
 		for (y = 0; y < MAP_HEIGHT; y++) {
 			switch (textMap[y][x]) {
@@ -280,10 +284,11 @@ int main (int argc, char *argv[]) {
 
 		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 		SDL_RenderClear (renderer);
-		current_state.render (1.f);
+		current_state.render_background (1.f);
 
 		recurse (&current_state, 1.f);
 
+		current_state.render_cass (1.f);
 		SDL_RenderPresent (renderer);
 	}
 
