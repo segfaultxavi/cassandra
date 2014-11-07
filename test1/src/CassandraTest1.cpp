@@ -198,7 +198,7 @@ void recurse (State *state, float alpha) {
 	int probs[4], i;
 	float total_prob = 0.f;
 
-	if (alpha < 0.01f) return;
+	if (alpha < 0.001f) return;
 
 	for (i = 0; i < 4; i++) {
 		if (state->can_input (actions[i])) {
@@ -214,8 +214,8 @@ void recurse (State *state, float alpha) {
 			Undo *undo;
 			float p = alpha * probs[i] / total_prob;
 			undo = state->input (actions[i]);
-			float p2 = 1.f - p;
-			p2 = 1.f - p2 * p2 * p2 * p2 * p2;
+			float p2 = 1.f - p; 
+			p2 = 1.f - SDL_pow (p2, 8.0);
 			state->render_background (p2 * 0.8f);
 			state->render_cass (p2 * 0.8f);
 			recurse (state, p);
