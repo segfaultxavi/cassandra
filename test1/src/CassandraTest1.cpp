@@ -6,8 +6,8 @@
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 800
-#define MAP_WIDTH 10
-#define MAP_HEIGHT 10
+#define MAP_WIDTH 20
+#define MAP_HEIGHT 20
 #define CELL_WIDTH (SCREEN_WIDTH / MAP_WIDTH)
 #define CELL_HEIGHT (SCREEN_HEIGHT / MAP_HEIGHT)
 
@@ -24,17 +24,27 @@ struct Cell {
 	virtual ~Cell () {}
 };
 
-char textMap[10][11] = {
-	"##########",
-	"#........#",
-	"###.#.#.##",
-	"#.....#..#",
-	"#.#.#.##.#",
-	"#........#",
-	"#.###.##.#",
-	"#.#.#.#..#",
-	"#...#C#.##",
-	"##########"
+char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
+	"####################",
+	"#........#.........#",
+	"###.#.#.##.........#",
+	"#.....#..#.........#",
+	"#.#.#.##...........#",
+	"#........#.........#",
+	"#.###.##.#.........#",
+	"#.#.#.#..#.........#",
+	"#...#C#.###.#.#.#.##",
+	"###.######.........#",
+	"#...#....#.#.#.#.#.#",
+	"###.#.####.........#",
+	"#.....#..##.#.#.#.##",
+	"#####.##.#.........#",
+	"#........#.#.#.#.#.#",
+	"########.#.........#",
+	"#........#.#.#.#.#.#",
+	"#####.####.........#",
+	"#..........#.#.#.#.#",
+	"####################",
 };
 
 struct Cass {
@@ -45,8 +55,7 @@ struct Cass {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
 		if (alpha == 1.f) {
 			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
-		}
-		else {
+		} else {
 			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_ADD);
 			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
 		}
@@ -58,6 +67,7 @@ SDL_Texture *Cass::tex;
 
 struct State {
 	Cass cass;
+	int last_dir;
 	Cell *map[MAP_WIDTH][MAP_HEIGHT];
 
 	State *clone () {
@@ -83,27 +93,57 @@ struct State {
 		}
 	}
 
+	bool can_input (SDL_Keycode keycode) {
+		switch (keycode) {
+		case SDLK_ESCAPE:
+			return true;
+		case SDLK_UP:
+			if (map[cass.x][cass.y - 1]->can_pass ()) return true;
+			break;
+		case SDLK_DOWN:
+			if (map[cass.x][cass.y + 1]->can_pass ()) return true;
+			break;
+		case SDLK_LEFT:
+			if (map[cass.x - 1][cass.y]->can_pass ()) return true;
+			break;
+		case SDLK_RIGHT:
+			if (map[cass.x + 1][cass.y]->can_pass ()) return true;
+			break;
+		}
+		return false;
+	}
+
 	bool input (SDL_Keycode keycode, bool *quit = NULL) {
 		switch (keycode) {
 		case SDLK_ESCAPE:
 			if (quit) *quit = true;
 			break;
 		case SDLK_UP:
-			if (map[cass.x][cass.y - 1]->can_pass ()) cass.y--;
-			else return false;
+			if (map[cass.x][cass.y - 1]->can_pass ()) {
+				cass.y--;
+				last_dir = 0;
+			} else return false;
 			break;
 		case SDLK_DOWN:
-			if (map[cass.x][cass.y + 1]->can_pass ()) cass.y++;
-			else return false;
+			if (map[cass.x][cass.y + 1]->can_pass ()) {
+				cass.y++;
+				last_dir = 2;
+			} else return false;
 			break;
 		case SDLK_LEFT:
-			if (map[cass.x - 1][cass.y]->can_pass ()) cass.x--;
-			else return false;
+			if (map[cass.x - 1][cass.y]->can_pass ()) {
+				cass.x--;
+				last_dir = 3;
+			}  else return false;
 			break;
 		case SDLK_RIGHT:
-			if (map[cass.x + 1][cass.y]->can_pass ()) cass.x++;
-			else return false;
+			if (map[cass.x + 1][cass.y]->can_pass ()) {
+				cass.x++;
+				last_dir = 1;
+			} else return false;
 			break;
+		default:
+			return false;
 		}
 		return true;
 	}
@@ -153,16 +193,32 @@ struct WallCell : Cell {
 };
 
 void recurse (State *state, float alpha) {
-	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_DOWN, SDLK_LEFT, SDLK_RIGHT };
-	if (alpha < 0.25f) return;
+	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT };
+	static const int weights[4] = { 3, 2, 1, 2 };
+	int probs[4], i;
+	float total_prob = 0.f;
 
-	for (int i = 0; i < 4; i++) {
-		State *s = state->clone ();
-		if (s->input (actions[i])) {
-			s->render (alpha / 4.f);
-			recurse (s, alpha / 2.f);
+	if (alpha < 0.1f) return;
+
+	for (i = 0; i < 4; i++) {
+		if (state->can_input (actions[i])) {
+			probs[i] = weights[(i + 4 - state->last_dir) % 4];
+		} else {
+			probs[i] = 0;
 		}
-		delete (s);
+		total_prob += probs[i];
+	}
+
+	for (i = 0; i < 4; i++) {
+		if (probs[i] > 0) {
+			State *s = state->clone ();
+			float p = alpha * probs[i] / total_prob;
+			s->input (actions[i]);
+			s->render (p * 0.8f);
+			s->last_dir = i;
+			recurse (s, p);
+			delete (s);
+		}
 	}
 }
 
@@ -206,6 +262,7 @@ int main (int argc, char *argv[]) {
 			}
 		}
 	}
+	current_state.last_dir = 0;
 
 	SDL_Event e;
 	bool quit = false;
