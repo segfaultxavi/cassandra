@@ -20,6 +20,29 @@
 SDL_Window *win;
 SDL_Renderer *renderer;
 
+char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
+	"####################",
+	"#........#.........#",
+	"###.#.#.##.........#",
+	"#.....#..#.........#",
+	"#.#.#.##...........#",
+	"#......X.#......X..#",
+	"#.###.##.#.........#",
+	"#.#.#.#..#.........#",
+	"#...#C#.###.#.#.#.##",
+	"###.######.........#",
+	"#...#....#.#.#.#X#.#",
+	"###.#.####.........#",
+	"#.....#..##.##..#..#",
+	"#####.##.#...#..#..#",
+	"#......X.#.#.#..#..#",
+	"#.######.#...#X.#..#",
+	"#........#.#.#..#..#",
+	"#####.####...#..#X.#",
+	"#.X........#....#..#",
+	"####################",
+};
+
 struct Cell {
 	virtual void render (int x, int y, float alpha) {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
@@ -27,34 +50,54 @@ struct Cell {
 	};
 	virtual bool can_pass () = 0;
 	virtual ~Cell () {}
+	virtual bool kills () = 0;
 };
 
-char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
-	"####################",
-	"#........#.........#",
-	"###.#.#.##.........#",
-	"#.....#..#.........#",
-	"#.#.#.##...........#",
-	"#......X.#.........#",
-	"#.###.##.#.........#",
-	"#.#.#.#..#.........#",
-	"#...#C#.###.#.#.#.##",
-	"###.######.........#",
-	"#...#....#.#.#.#.#.#",
-	"###.#.####.........#",
-	"#.....#..##.#.#.#.##",
-	"#####.##.#.........#",
-	"#........#.#.#.#.#.#",
-	"########.#.........#",
-	"#........#.#.#.#.#.#",
-	"#####.####.........#",
-	"#..........#.#.#.#.#",
-	"####################",
+struct EmptyCell : Cell {
+	virtual void render (int x, int y, float alpha) {
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+		Cell::render (x, y, alpha);
+	};
+
+	virtual bool can_pass () { return true; }
+	virtual bool kills () { return false; }
+};
+
+struct WallCell : Cell {
+	virtual void render (int x, int y, float alpha) {
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 0, 0, 255, SDL_ALPHA_OPAQUE);
+		Cell::render (x, y, alpha);
+	};
+
+	virtual bool can_pass () { return false; }
+	virtual bool kills () { return false; }
+};
+
+struct TrapCell : Cell {
+	virtual void render (int x, int y, float alpha) {
+		return;
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
+		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
+		for (int sx = 0; sx < 3; sx++) {
+			for (int sy = 0; sy < 3; sy++) {
+				rect.x = (int)((x + sx / 3.f + 1 / 7.f) * CELL_WIDTH);
+				rect.y = (int)((y + sy / 3.f + 1 / 7.f) * CELL_WIDTH);
+				SDL_RenderFillRect (renderer, &rect);
+			}
+		}
+	};
+
+	virtual bool can_pass () { return true; }
+	virtual bool kills () { return true; }
 };
 
 struct Cass {
 	int x, y;
 	static SDL_Texture *tex;
+	bool dead;
 
 	void render (float alpha) {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
@@ -66,6 +109,9 @@ struct Cass {
 			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
 			SDL_SetTextureColorMod (tex, 255, 255, 255);
 		}
+		if (dead) {
+			SDL_SetTextureColorMod (tex, 255, 0, 0);
+		}
 		SDL_RenderCopy (renderer, tex, NULL, &rect);
 	}
 };
@@ -75,11 +121,13 @@ SDL_Texture *Cass::tex;
 struct Undo {
 	int cass_x, cass_y;
 	int last_dir;
+	bool dead;
 
-	Undo (int cass_x, int cass_y, int last_dir) {
+	Undo (int cass_x, int cass_y, int last_dir, bool dead) {
 		this->cass_x = cass_x;
 		this->cass_y = cass_y;
 		this->last_dir = last_dir;
+		this->dead = dead;
 	}
 };
 
@@ -102,16 +150,16 @@ struct State {
 		case SDLK_ESCAPE:
 			return true;
 		case SDLK_UP:
-			if (map[cass.x][cass.y - 1]->can_pass ()) return true;
+			if (!cass.dead && map[cass.x][cass.y - 1]->can_pass ()) return true;
 			break;
 		case SDLK_DOWN:
-			if (map[cass.x][cass.y + 1]->can_pass ()) return true;
+			if (!cass.dead && map[cass.x][cass.y + 1]->can_pass ()) return true;
 			break;
 		case SDLK_LEFT:
-			if (map[cass.x - 1][cass.y]->can_pass ()) return true;
+			if (!cass.dead && map[cass.x - 1][cass.y]->can_pass ()) return true;
 			break;
 		case SDLK_RIGHT:
-			if (map[cass.x + 1][cass.y]->can_pass ()) return true;
+			if (!cass.dead && map[cass.x + 1][cass.y]->can_pass ()) return true;
 			break;
 		}
 		return false;
@@ -124,33 +172,36 @@ struct State {
 			if (quit) *quit = true;
 			break;
 		case SDLK_UP:
-			if (map[cass.x][cass.y - 1]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir);
+			if (!cass.dead && map[cass.x][cass.y - 1]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.y--;
 				last_dir = 0;
 			}
 			break;
 		case SDLK_DOWN:
-			if (map[cass.x][cass.y + 1]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir);
+			if (!cass.dead && map[cass.x][cass.y + 1]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.y++;
 				last_dir = 2;
 			}
 			break;
 		case SDLK_LEFT:
-			if (map[cass.x - 1][cass.y]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir);
+			if (!cass.dead && map[cass.x - 1][cass.y]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.x--;
 				last_dir = 3;
 			}
 			break;
 		case SDLK_RIGHT:
-			if (map[cass.x + 1][cass.y]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir);
+			if (!cass.dead && map[cass.x + 1][cass.y]->can_pass ()) {
+				undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.x++;
 				last_dir = 1;
 			}
 			break;
+		}
+		if (map[cass.x][cass.y]->kills ()) {
+			cass.dead = true;
 		}
 		return undo;
 	}
@@ -171,49 +222,7 @@ struct State {
 		cass.x = undo->cass_x;
 		cass.y = undo->cass_y;
 		last_dir = undo->last_dir;
-	}
-};
-
-struct EmptyCell : Cell {
-	virtual void render (int x, int y, float alpha) {
-		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-		Cell::render (x, y, alpha);
-	};
-
-	virtual bool can_pass () {
-		return true;
-	}
-};
-
-struct WallCell : Cell {
-	virtual void render (int x, int y, float alpha) {
-		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 0, 0, 255, SDL_ALPHA_OPAQUE);
-		Cell::render (x, y, alpha);
-	};
-
-	virtual bool can_pass () {
-		return false;
-	}
-};
-
-struct TrapCell : Cell {
-	virtual void render (int x, int y, float alpha) {
-		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
-		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
-		for (int sx = 0; sx < 3; sx++) {
-			for (int sy = 0; sy < 3; sy++) {
-				rect.x = (int)((x + sx / 3.f + 1 / 7.f) * CELL_WIDTH);
-				rect.y = (int)((y + sy / 3.f + 1 / 7.f) * CELL_WIDTH);
-				SDL_RenderFillRect (renderer, &rect);
-			}
-		}
-	};
-
-	virtual bool can_pass () {
-		return true;
+		cass.dead = undo->dead;
 	}
 };
 
@@ -293,6 +302,7 @@ int main (int argc, char *argv[]) {
 		}
 	}
 	current_state.last_dir = 0;
+	current_state.cass.dead = false;
 
 	SDL_Event e;
 	bool quit = false;
