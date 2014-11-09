@@ -175,6 +175,7 @@ struct PushableBlockCell : Cell {
 	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y) {}
 
 	virtual void render (int x, int y, float alpha) {
+		// FIXME Use alpha for pushables too!
 		if (alpha < 1.f) return;
 		SDL_SetRenderDrawColor (renderer, 0, 255, 255, SDL_ALPHA_OPAQUE);
 		SDL_Rect rect = { x * CELL_WIDTH + 3, y * CELL_HEIGHT + 3, CELL_WIDTH - 6, CELL_HEIGHT - 6 };
@@ -196,6 +197,7 @@ struct PushableBlockCell : Cell {
 			delete map->cells[newx][newy];
 		}
 		map->cells[newx][newy] = this;
+		// FIXME Detect pits and make both pit+pushable disappear
 		map->cells[x][y] = new EmptyCell (map, x, y);
 		x = newx;
 		y = newy;
@@ -405,10 +407,10 @@ int main (int argc, char *argv[]) {
 		"#.....#..##.##..#..#",
 		"#####.##.#...#..#..#",
 		"#......X.#.#.#..#..#",
-		"#.######.#...#X.#..#",
+		"#.######.#...#X.####",
 		"#........#.#.#..#..#",
-		"#####.####...#..#X.#",
-		"#.X........#....#..#",
+		"#####.####...#..#..#",
+		"#.X........#....p..#",
 		"####################",
 	};
 	State current_state (textMap);
