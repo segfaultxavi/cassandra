@@ -22,59 +22,9 @@ SDL_Renderer *renderer;
 
 static const int dirs[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 
-struct Cell {
-	virtual void render (int x, int y, float alpha) {
-		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
-		SDL_RenderFillRect (renderer, &rect);
-	};
-	virtual bool can_pass () = 0;
-	virtual ~Cell () {}
-	virtual bool kills () = 0;
-};
-
-struct EmptyCell : Cell {
-	virtual void render (int x, int y, float alpha) {
-		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-		Cell::render (x, y, alpha);
-	};
-
-	virtual bool can_pass () { return true; }
-	virtual bool kills () { return false; }
-};
-
-struct WallCell : Cell {
-	virtual void render (int x, int y, float alpha) {
-		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 0, 0, 255, SDL_ALPHA_OPAQUE);
-		Cell::render (x, y, alpha);
-	};
-
-	virtual bool can_pass () { return false; }
-	virtual bool kills () { return false; }
-};
-
-struct TrapCell : Cell {
-	virtual void render (int x, int y, float alpha) {
-		return;
-		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
-		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
-		for (int sx = 0; sx < 3; sx++) {
-			for (int sy = 0; sy < 3; sy++) {
-				rect.x = (int)((x + sx / 3.f + 1 / 7.f) * CELL_WIDTH);
-				rect.y = (int)((y + sy / 3.f + 1 / 7.f) * CELL_WIDTH);
-				SDL_RenderFillRect (renderer, &rect);
-			}
-		}
-	};
-
-	virtual bool can_pass () { return true; }
-	virtual bool kills () { return true; }
-};
-
 struct Cass {
 	int x, y;
+	int dir;
 	static SDL_Texture *tex;
 	bool dead;
 
@@ -97,38 +47,180 @@ struct Cass {
 
 SDL_Texture *Cass::tex;
 
-struct State {
-	struct Undo {
-		int cass_x, cass_y;
-		int last_dir;
-		bool dead;
+struct Cell;
+struct State;
+struct Undo;
 
-		Undo (int cass_x, int cass_y, int last_dir, bool dead) {
-			this->cass_x = cass_x;
-			this->cass_y = cass_y;
-			this->last_dir = last_dir;
-			this->dead = dead;
+struct Undo {
+	Undo *next;
+
+	Undo () : next (NULL) {}
+
+	virtual ~Undo () {
+		if (next) {
+			delete next;
+		}
+	}
+
+	virtual void apply (State *state) = 0;
+
+	void add (Undo *new_undo) {
+		Undo *last = this, *next = last->next;
+		while (next) {
+			last = next;
+			next = next->next;
+		}
+		last->next = new_undo;
+	}
+};
+
+struct CassUndo : Undo {
+	int cass_x, cass_y;
+	int cass_dir;
+	bool dead;
+
+	CassUndo (int cass_x, int cass_y, int cass_dir, bool dead) {
+		this->cass_x = cass_x;
+		this->cass_y = cass_y;
+		this->cass_dir = cass_dir;
+		this->dead = dead;
+	}
+
+	void apply (State *state);
+};
+
+struct PushUndo : Undo {
+	int new_x, new_y;
+	int old_x, old_y;
+	Cell *old_cell;
+
+	PushUndo (int new_x, int new_y, int old_x, int old_y, Cell *old_cell) {
+		this->new_x = new_x;
+		this->new_y = new_y;
+		this->old_x = old_x;
+		this->old_y = old_y;
+		this->old_cell = old_cell;
+	}
+
+	void apply (State *state);
+};
+
+struct Map {
+	Cell *cells[MAP_WIDTH][MAP_HEIGHT];
+};
+
+struct Cell {
+	Map *map;
+	int x, y;
+
+	Cell (Map *map, int x, int y) : map (map), x (x), y (y) {}
+	virtual ~Cell () {}
+
+	virtual void render (int x, int y, float alpha) {
+		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
+		SDL_RenderFillRect (renderer, &rect);
+	};
+	virtual bool can_pass (int incoming_dir) = 0;
+	virtual void pass (Cass *cass, Undo **undo = NULL) {};
+};
+
+struct EmptyCell : Cell {
+	EmptyCell (Map *map, int x, int y) : Cell (map, x, y) {}
+
+	virtual void render (int x, int y, float alpha) {
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+		Cell::render (x, y, alpha);
+	};
+
+	virtual bool can_pass (int incoming_dir) { return true; }
+};
+
+struct WallCell : Cell {
+	WallCell (Map *map, int x, int y) : Cell (map, x, y) {}
+
+	virtual void render (int x, int y, float alpha) {
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 0, 0, 255, SDL_ALPHA_OPAQUE);
+		Cell::render (x, y, alpha);
+	};
+
+	virtual bool can_pass (int incoming_dir) { return false; }
+};
+
+struct TrapCell : Cell {
+	TrapCell (Map *map, int x, int y) : Cell (map, x, y) {}
+
+	virtual void render (int x, int y, float alpha) {
+		return;
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
+		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
+		for (int sx = 0; sx < 3; sx++) {
+			for (int sy = 0; sy < 3; sy++) {
+				rect.x = (int)((x + sx / 3.f + 1 / 7.f) * CELL_WIDTH);
+				rect.y = (int)((y + sy / 3.f + 1 / 7.f) * CELL_WIDTH);
+				SDL_RenderFillRect (renderer, &rect);
+			}
 		}
 	};
 
+	virtual bool can_pass (int incoming_dir) { return true; }
+	virtual void pass (Cass *cass, Undo **undo = NULL) {
+		cass->dead = true;
+	}
+};
+
+struct PushableBlockCell : Cell {
+	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y) {}
+
+	virtual void render (int x, int y, float alpha) {
+		if (alpha < 1.f) return;
+		SDL_SetRenderDrawColor (renderer, 0, 255, 255, SDL_ALPHA_OPAQUE);
+		SDL_Rect rect = { x * CELL_WIDTH + 3, y * CELL_HEIGHT + 3, CELL_WIDTH - 6, CELL_HEIGHT - 6 };
+		SDL_RenderFillRect (renderer, &rect);
+	};
+
+	virtual bool can_pass (int incoming_dir) {
+		int newx = x + dirs[incoming_dir][0];
+		int newy = y + dirs[incoming_dir][1];
+		return (map->cells[newx][newy]->can_pass (incoming_dir));
+	}
+
+	virtual void pass (Cass *cass, Undo **undo = NULL) {
+		int newx = x + dirs[cass->dir][0];
+		int newy = y + dirs[cass->dir][1];
+		if (undo) {
+			*undo = new PushUndo (newx, newy, x, y, map->cells[newx][newy]);
+		} else {
+			delete map->cells[newx][newy];
+		}
+		map->cells[newx][newy] = this;
+		map->cells[x][y] = new EmptyCell (map, x, y);
+		x = newx;
+		y = newy;
+	}
+};
+
+struct State {
 	bool finished;
 	Cass cass;
-	int last_dir;
-	Cell *map[MAP_WIDTH][MAP_HEIGHT];
+	Map map;
 
 	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) {
 		int x, y;
 		for (x = 0; x < MAP_WIDTH; x++) {
 			for (y = 0; y < MAP_HEIGHT; y++) {
 				switch (text_map[y][x]) {
-				case '#': map[x][y] = new WallCell (); break;
+				case '#': map.cells[x][y] = new WallCell (&map, x, y); break;
 				case 'C': cass.x = x; cass.y = y; // Deliverate fallthrough
-				case '.': map[x][y] = new EmptyCell (); break;
-				case 'X': map[x][y] = new TrapCell (); break;
+				case '.': map.cells[x][y] = new EmptyCell (&map, x, y); break;
+				case 'X': map.cells[x][y] = new TrapCell (&map, x, y); break;
+				case 'p': map.cells[x][y] = new PushableBlockCell (&map, x, y); break;
 				}
 			}
 		}
-		last_dir = 0;
+		cass.dir = 0;
 		cass.dead = false;
 		finished = false;
 	}
@@ -137,7 +229,7 @@ struct State {
 		int x, y;
 		for (x = 0; x < MAP_WIDTH; x++) {
 			for (y = 0; y < MAP_HEIGHT; y++) {
-				delete map[x][y];
+				delete map.cells[x][y];
 			}
 		}
 	}
@@ -161,7 +253,7 @@ struct State {
 			break;
 		}
 		if (!cass.dead && dir > -1) {
-			if (map[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass ()) return true;
+			if (map.cells[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass (dir)) return true;
 		}
 		return false;
 	}
@@ -186,23 +278,26 @@ struct State {
 			break;
 		}
 		if (!cass.dead && dir > -1) {
-			if (map[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass ()) {
+			if (map.cells[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass (dir)) {
+				Undo *subundo = NULL;
 				if (undo)
-					*undo = new Undo (cass.x, cass.y, last_dir, false);
+					*undo = new CassUndo (cass.x, cass.y, cass.dir, false);
 				cass.x += dirs[dir][0];
 				cass.y += dirs[dir][1];
-				last_dir = dir;
+				cass.dir = dir;
+
+				map.cells[cass.x][cass.y]->pass (&cass, undo ? &subundo : NULL);
+				if (subundo) {
+					(*undo)->add (subundo);
+				}
 			}
-		}
-		if (map[cass.x][cass.y]->kills ()) {
-			cass.dead = true;
 		}
 	}
 
 	void render_background (float alpha) {
 		for (int x = 0; x < MAP_WIDTH; x++) {
 			for (int y = 0; y < MAP_HEIGHT; y++) {
-				map[x][y]->render (x, y, alpha);
+				map.cells[x][y]->render (x, y, alpha);
 			}
 		}
 	}
@@ -210,14 +305,26 @@ struct State {
 	void render_cass (float alpha) {
 		cass.render (alpha);
 	}
-
-	void undo (Undo *undo) {
-		cass.x = undo->cass_x;
-		cass.y = undo->cass_y;
-		last_dir = undo->last_dir;
-		cass.dead = undo->dead;
-	}
 };
+
+void CassUndo::apply (State *state) {
+	if (next)
+		next->apply (state);
+	state->cass.x = cass_x;
+	state->cass.y = cass_y;
+	state->cass.dir = cass_dir;
+	state->cass.dead = dead;
+}
+
+void PushUndo::apply (State *state) {
+	if (next)
+		next->apply (state);
+	delete state->map.cells[old_x][old_y];
+	state->map.cells[old_x][old_y] = state->map.cells[new_x][new_y];
+	state->map.cells[old_x][old_y]->x = old_x;
+	state->map.cells[old_x][old_y]->y = old_y;
+	state->map.cells[new_x][new_y] = old_cell;
+}
 
 void recurse (State *state, float alpha) {
 	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT };
@@ -229,7 +336,7 @@ void recurse (State *state, float alpha) {
 
 	for (i = 0; i < 4; i++) {
 		if (state->can_input (actions[i])) {
-			probs[i] = weights[(i + 4 - state->last_dir) % 4];
+			probs[i] = weights[(i + 4 - state->cass.dir) % 4];
 		} else {
 			probs[i] = 0;
 		}
@@ -238,7 +345,7 @@ void recurse (State *state, float alpha) {
 
 	for (i = 0; i < 4; i++) {
 		if (probs[i] > 0) {
-			State::Undo *undo;
+			Undo *undo;
 			float p = alpha * probs[i] / total_prob;
 			state->input (actions[i], &undo);
 			float p2 = 1.f - p; 
@@ -246,7 +353,7 @@ void recurse (State *state, float alpha) {
 			state->render_background (p2 * 0.8f);
 			state->render_cass (p2 * 0.8f);
 			recurse (state, p);
-			state->undo (undo);
+			undo->apply (state);
 			delete undo;
 		}
 	}
@@ -277,7 +384,7 @@ int main (int argc, char *argv[]) {
 
 	SDL_Surface *surf = SDL_CreateRGBSurface (SDL_SWSURFACE, CELL_WIDTH, CELL_HEIGHT, 32, 0, 0, 0, 0);
 	SDL_FillRect (surf, NULL, 0x00000000);
-	SDL_Rect rect = { 5, 5, CELL_WIDTH - 10, CELL_HEIGHT - 10 };
+	SDL_Rect rect = { 7, 7, CELL_WIDTH - 14, CELL_HEIGHT - 14 };
 	SDL_FillRect (surf, &rect, 0xFFFFFFFF); // ARGB
 	Cass::tex = SDL_CreateTextureFromSurface (renderer, surf);
 	SDL_FreeSurface (surf);
@@ -288,7 +395,7 @@ int main (int argc, char *argv[]) {
 		"###.#.#.##.........#",
 		"#.....#..#.........#",
 		"#.#.#.##...........#",
-		"#......X.#......X..#",
+		"#.p....X.#......X..#",
 		"#.###.##.#.........#",
 		"#.#.#.#..#.........#",
 		"#...#C#.###.#.#.#.##",
