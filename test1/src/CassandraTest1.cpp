@@ -20,6 +20,8 @@
 SDL_Window *win;
 SDL_Renderer *renderer;
 
+static const int dirs[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
+
 struct Cell {
 	virtual void render (int x, int y, float alpha) {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
@@ -141,62 +143,56 @@ struct State {
 	}
 
 	bool can_input (SDL_Keycode keycode) {
+		int dir = -1;
 		switch (keycode) {
 		case SDLK_ESCAPE:
 			return true;
 		case SDLK_UP:
-			if (!cass.dead && map[cass.x][cass.y - 1]->can_pass ()) return true;
-			break;
-		case SDLK_DOWN:
-			if (!cass.dead && map[cass.x][cass.y + 1]->can_pass ()) return true;
-			break;
-		case SDLK_LEFT:
-			if (!cass.dead && map[cass.x - 1][cass.y]->can_pass ()) return true;
+			dir = 0;
 			break;
 		case SDLK_RIGHT:
-			if (!cass.dead && map[cass.x + 1][cass.y]->can_pass ()) return true;
+			dir = 1;
 			break;
+		case SDLK_DOWN:
+			dir = 2;
+			break;
+		case SDLK_LEFT:
+			dir = 3;
+			break;
+		}
+		if (!cass.dead && dir > -1) {
+			if (map[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass ()) return true;
 		}
 		return false;
 	}
 
 	void input (SDL_Keycode keycode, Undo **undo = NULL) {
+		int dir = -1;
 		switch (keycode) {
 		case SDLK_ESCAPE:
 			finished = true;
 			break;
 		case SDLK_UP:
-			if (!cass.dead && map[cass.x][cass.y - 1]->can_pass ()) {
-				if (undo)
-					*undo = new Undo (cass.x, cass.y, last_dir, false);
-				cass.y--;
-				last_dir = 0;
-			}
-			break;
-		case SDLK_DOWN:
-			if (!cass.dead && map[cass.x][cass.y + 1]->can_pass ()) {
-				if (undo)
-					*undo = new Undo (cass.x, cass.y, last_dir, false);
-				cass.y++;
-				last_dir = 2;
-			}
-			break;
-		case SDLK_LEFT:
-			if (!cass.dead && map[cass.x - 1][cass.y]->can_pass ()) {
-				if (undo)
-					*undo = new Undo (cass.x, cass.y, last_dir, false);
-				cass.x--;
-				last_dir = 3;
-			}
+			dir = 0;
 			break;
 		case SDLK_RIGHT:
-			if (!cass.dead && map[cass.x + 1][cass.y]->can_pass ()) {
+			dir = 1;
+			break;
+		case SDLK_DOWN:
+			dir = 2;
+			break;
+		case SDLK_LEFT:
+			dir = 3;
+			break;
+		}
+		if (!cass.dead && dir > -1) {
+			if (map[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass ()) {
 				if (undo)
 					*undo = new Undo (cass.x, cass.y, last_dir, false);
-				cass.x++;
-				last_dir = 1;
+				cass.x += dirs[dir][0];
+				cass.y += dirs[dir][1];
+				last_dir = dir;
 			}
-			break;
 		}
 		if (map[cass.x][cass.y]->kills ()) {
 			cass.dead = true;
