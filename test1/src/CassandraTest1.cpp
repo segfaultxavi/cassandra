@@ -20,29 +20,6 @@
 SDL_Window *win;
 SDL_Renderer *renderer;
 
-char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
-	"####################",
-	"#........#.........#",
-	"###.#.#.##.........#",
-	"#.....#..#.........#",
-	"#.#.#.##...........#",
-	"#......X.#......X..#",
-	"#.###.##.#.........#",
-	"#.#.#.#..#.........#",
-	"#...#C#.###.#.#.#.##",
-	"###.######.........#",
-	"#...#....#.#.#.#X#.#",
-	"###.#.####.........#",
-	"#.....#..##.##..#..#",
-	"#####.##.#...#..#..#",
-	"#......X.#.#.#..#..#",
-	"#.######.#...#X.#..#",
-	"#........#.#.#..#..#",
-	"#####.####...#..#X.#",
-	"#.X........#....#..#",
-	"####################",
-};
-
 struct Cell {
 	virtual void render (int x, int y, float alpha) {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
@@ -118,23 +95,41 @@ struct Cass {
 
 SDL_Texture *Cass::tex;
 
-struct Undo {
-	int cass_x, cass_y;
-	int last_dir;
-	bool dead;
-
-	Undo (int cass_x, int cass_y, int last_dir, bool dead) {
-		this->cass_x = cass_x;
-		this->cass_y = cass_y;
-		this->last_dir = last_dir;
-		this->dead = dead;
-	}
-};
-
 struct State {
+	struct Undo {
+		int cass_x, cass_y;
+		int last_dir;
+		bool dead;
+
+		Undo (int cass_x, int cass_y, int last_dir, bool dead) {
+			this->cass_x = cass_x;
+			this->cass_y = cass_y;
+			this->last_dir = last_dir;
+			this->dead = dead;
+		}
+	};
+
+	bool finished;
 	Cass cass;
 	int last_dir;
 	Cell *map[MAP_WIDTH][MAP_HEIGHT];
+
+	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) {
+		int x, y;
+		for (x = 0; x < MAP_WIDTH; x++) {
+			for (y = 0; y < MAP_HEIGHT; y++) {
+				switch (text_map[y][x]) {
+				case '#': map[x][y] = new WallCell (); break;
+				case 'C': cass.x = x; cass.y = y; // Deliverate fallthrough
+				case '.': map[x][y] = new EmptyCell (); break;
+				case 'X': map[x][y] = new TrapCell (); break;
+				}
+			}
+		}
+		last_dir = 0;
+		cass.dead = false;
+		finished = false;
+	}
 
 	~State () {
 		int x, y;
@@ -165,36 +160,39 @@ struct State {
 		return false;
 	}
 
-	Undo *input (SDL_Keycode keycode, bool *quit = NULL) {
-		Undo *undo = NULL;
+	void input (SDL_Keycode keycode, Undo **undo = NULL) {
 		switch (keycode) {
 		case SDLK_ESCAPE:
-			if (quit) *quit = true;
+			finished = true;
 			break;
 		case SDLK_UP:
 			if (!cass.dead && map[cass.x][cass.y - 1]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir, false);
+				if (undo)
+					*undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.y--;
 				last_dir = 0;
 			}
 			break;
 		case SDLK_DOWN:
 			if (!cass.dead && map[cass.x][cass.y + 1]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir, false);
+				if (undo)
+					*undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.y++;
 				last_dir = 2;
 			}
 			break;
 		case SDLK_LEFT:
 			if (!cass.dead && map[cass.x - 1][cass.y]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir, false);
+				if (undo)
+					*undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.x--;
 				last_dir = 3;
 			}
 			break;
 		case SDLK_RIGHT:
 			if (!cass.dead && map[cass.x + 1][cass.y]->can_pass ()) {
-				undo = new Undo (cass.x, cass.y, last_dir, false);
+				if (undo)
+					*undo = new Undo (cass.x, cass.y, last_dir, false);
 				cass.x++;
 				last_dir = 1;
 			}
@@ -203,7 +201,6 @@ struct State {
 		if (map[cass.x][cass.y]->kills ()) {
 			cass.dead = true;
 		}
-		return undo;
 	}
 
 	void render_background (float alpha) {
@@ -245,9 +242,9 @@ void recurse (State *state, float alpha) {
 
 	for (i = 0; i < 4; i++) {
 		if (probs[i] > 0) {
-			Undo *undo;
+			State::Undo *undo;
 			float p = alpha * probs[i] / total_prob;
-			undo = state->input (actions[i]);
+			state->input (actions[i], &undo);
 			float p2 = 1.f - p; 
 			p2 = 1.f - (float)SDL_pow (p2, 8.0);
 			state->render_background (p2 * 0.8f);
@@ -289,24 +286,32 @@ int main (int argc, char *argv[]) {
 	Cass::tex = SDL_CreateTextureFromSurface (renderer, surf);
 	SDL_FreeSurface (surf);
 
-	int x, y;
-	State current_state;
-	for (x = 0; x < MAP_WIDTH; x++) {
-		for (y = 0; y < MAP_HEIGHT; y++) {
-			switch (textMap[y][x]) {
-			case '#': current_state.map[x][y] = new WallCell (); break;
-			case 'C': current_state.cass.x = x; current_state.cass.y = y; // Deliverate fallthrough
-			case '.': current_state.map[x][y] = new EmptyCell (); break;
-			case 'X': current_state.map[x][y] = new TrapCell (); break;
-			}
-		}
-	}
-	current_state.last_dir = 0;
-	current_state.cass.dead = false;
+	static const char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
+		"####################",
+		"#........#.........#",
+		"###.#.#.##.........#",
+		"#.....#..#.........#",
+		"#.#.#.##...........#",
+		"#......X.#......X..#",
+		"#.###.##.#.........#",
+		"#.#.#.#..#.........#",
+		"#...#C#.###.#.#.#.##",
+		"###.######.........#",
+		"#...#....#.#.#.#X#.#",
+		"###.#.####.........#",
+		"#.....#..##.##..#..#",
+		"#####.##.#...#..#..#",
+		"#......X.#.#.#..#..#",
+		"#.######.#...#X.#..#",
+		"#........#.#.#..#..#",
+		"#####.####...#..#X.#",
+		"#.X........#....#..#",
+		"####################",
+	};
+	State current_state (textMap);
 
 	SDL_Event e;
 	bool quit = false;
-	Undo *undo;
 	while (!quit) {
 		if (SDL_WaitEvent (&e)) {
 			switch (e.type) {
@@ -314,8 +319,9 @@ int main (int argc, char *argv[]) {
 				quit = true;
 				break;
 			case SDL_KEYDOWN:
-				undo = current_state.input (e.key.keysym.sym, &quit);
-				delete undo;
+				current_state.input (e.key.keysym.sym);
+				if (current_state.finished)
+					quit = true;
 				break;
 			}
 		}
