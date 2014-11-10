@@ -1,14 +1,15 @@
 #define _CRTDBG_MAP_ALLOC
+#include <stdlib.h>
+#include <crtdbg.h>
+#include <stdio.h>
+#include "SDL.h"
+
 #ifdef _DEBUG
 #ifndef DBG_NEW
 #define DBG_NEW new ( _NORMAL_BLOCK , __FILE__ , __LINE__ )
 #define new DBG_NEW
 #endif
 #endif  // _DEBUG
-#include <stdlib.h>
-#include <crtdbg.h>
-#include <stdio.h>
-#include "SDL.h"
 
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 800
@@ -28,6 +29,17 @@ struct Cass {
 	static SDL_Texture *tex;
 	bool dead;
 
+	Cass () {
+		if (tex == NULL) {
+			SDL_Surface *surf = SDL_CreateRGBSurface (SDL_SWSURFACE, CELL_WIDTH, CELL_HEIGHT, 32, 0, 0, 0, 0);
+			SDL_FillRect (surf, NULL, 0x00000000);
+			SDL_Rect rect = { 7, 7, CELL_WIDTH - 14, CELL_HEIGHT - 14 };
+			SDL_FillRect (surf, &rect, 0xFFFFFFFF); // ARGB
+			tex = SDL_CreateTextureFromSurface (renderer, surf);
+			SDL_FreeSurface (surf);
+		}
+	}
+
 	void render (float alpha) {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
 		if (alpha == 1.f) {
@@ -45,7 +57,7 @@ struct Cass {
 	}
 };
 
-SDL_Texture *Cass::tex;
+SDL_Texture *Cass::tex = NULL;
 
 struct Cell;
 struct State;
@@ -114,47 +126,80 @@ struct Cell {
 	int x, y;
 
 	Cell (Map *map, int x, int y) : map (map), x (x), y (y) {}
+
 	virtual ~Cell () {}
 
-	virtual void render (int x, int y, float alpha) {
-		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
-		SDL_RenderFillRect (renderer, &rect);
-	};
+	virtual void render (int x, int y, float alpha) = 0;
 	virtual bool can_pass (int incoming_dir) = 0;
 	virtual void pass (Cass *cass, Undo **undo = NULL) {};
+
+protected:
+	void  render (int x, int y, SDL_Texture *tex) {
+		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
+		SDL_RenderCopy (renderer, tex, NULL, &rect);
+	}
+
+	SDL_Texture *create_texture (int inset) {
+		SDL_Texture *tex;
+
+		SDL_Surface *surf = SDL_CreateRGBSurface (SDL_SWSURFACE, CELL_WIDTH, CELL_HEIGHT, 32, 0, 0, 0, 0);
+		SDL_FillRect (surf, NULL, 0x00000000);
+		SDL_Rect rect = { inset, inset, CELL_WIDTH - inset * 2, CELL_HEIGHT - inset * 2 };
+		SDL_FillRect (surf, &rect, 0xFFFFFFFF); // ARGB
+		tex = SDL_CreateTextureFromSurface (renderer, surf);
+		SDL_FreeSurface (surf);
+
+		return tex;
+	}
 };
 
 struct EmptyCell : Cell {
 	EmptyCell (Map *map, int x, int y) : Cell (map, x, y) {}
+	static SDL_Texture *tex;
 
 	virtual void render (int x, int y, float alpha) {
+		if (!tex)
+			tex = Cell::create_texture (0);
 		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-		Cell::render (x, y, alpha);
+		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+		SDL_SetTextureColorMod (tex, 0, 0, 0);
+		Cell::render (x, y, tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) { return true; }
 };
 
+SDL_Texture *EmptyCell::tex = NULL;
+
 struct WallCell : Cell {
 	WallCell (Map *map, int x, int y) : Cell (map, x, y) {}
+	static SDL_Texture *tex;
 
 	virtual void render (int x, int y, float alpha) {
+		if (!tex)
+			tex = Cell::create_texture (0);
 		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 0, 0, 255, SDL_ALPHA_OPAQUE);
-		Cell::render (x, y, alpha);
+		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+		SDL_SetTextureColorMod (tex, 0, 0, 255);
+		Cell::render (x, y, tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) { return false; }
 };
 
+SDL_Texture *WallCell::tex = NULL;
+
 struct TrapCell : Cell {
 	TrapCell (Map *map, int x, int y) : Cell (map, x, y) {}
+	static SDL_Texture *tex;
 
 	virtual void render (int x, int y, float alpha) {
 		return;
+		if (!tex)
+			tex = Cell::create_texture (4);
 		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
+		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+		SDL_SetTextureColorMod (tex, 255, 0, 0);
 		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
 		for (int sx = 0; sx < 3; sx++) {
 			for (int sy = 0; sy < 3; sy++) {
@@ -171,15 +216,24 @@ struct TrapCell : Cell {
 	}
 };
 
+SDL_Texture *TrapCell::tex = NULL;
+
 struct PushableBlockCell : Cell {
 	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y) {}
+	static SDL_Texture *tex;
 
 	virtual void render (int x, int y, float alpha) {
-		// FIXME Use alpha for pushables too!
-		if (alpha < 1.f) return;
-		SDL_SetRenderDrawColor (renderer, 0, 255, 255, SDL_ALPHA_OPAQUE);
-		SDL_Rect rect = { x * CELL_WIDTH + 3, y * CELL_HEIGHT + 3, CELL_WIDTH - 6, CELL_HEIGHT - 6 };
-		SDL_RenderFillRect (renderer, &rect);
+		if (!tex)
+			tex = Cell::create_texture (2);
+		if (alpha < 1.f) {
+			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_ADD);
+			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
+			SDL_SetTextureColorMod (tex, 0, 255, 255);
+		} else {
+			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+			SDL_SetTextureColorMod (tex, 0, 255, 255);
+		}
+		Cell::render (x, y, tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) {
@@ -203,6 +257,8 @@ struct PushableBlockCell : Cell {
 		y = newy;
 	}
 };
+
+SDL_Texture *PushableBlockCell::tex = NULL;
 
 struct State {
 	bool finished;
@@ -383,13 +439,6 @@ int main (int argc, char *argv[]) {
 		SDL_Quit ();
 		return 1;
 	}
-
-	SDL_Surface *surf = SDL_CreateRGBSurface (SDL_SWSURFACE, CELL_WIDTH, CELL_HEIGHT, 32, 0, 0, 0, 0);
-	SDL_FillRect (surf, NULL, 0x00000000);
-	SDL_Rect rect = { 7, 7, CELL_WIDTH - 14, CELL_HEIGHT - 14 };
-	SDL_FillRect (surf, &rect, 0xFFFFFFFF); // ARGB
-	Cass::tex = SDL_CreateTextureFromSurface (renderer, surf);
-	SDL_FreeSurface (surf);
 
 	static const char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
 		"####################",
