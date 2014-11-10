@@ -60,8 +60,8 @@ struct Cass {
 SDL_Texture *Cass::tex = NULL;
 
 struct Cell;
+struct DoorCell;
 struct State;
-struct Undo;
 
 struct Undo {
 	Undo *next;
@@ -115,6 +115,14 @@ struct PushUndo : Undo {
 		this->old_cell = old_cell;
 		this->pushable = pushable;
 	}
+
+	void apply (State *state);
+};
+
+struct DoorToggleUndo : Undo {
+	DoorCell *door;
+
+	DoorToggleUndo (DoorCell *door) : door (door) {}
 
 	void apply (State *state);
 };
@@ -271,6 +279,66 @@ struct PushableBlockCell : Cell {
 
 SDL_Texture *PushableBlockCell::tex = NULL;
 
+struct DoorCell : Cell {
+	int id;
+	bool open;
+
+	DoorCell (Map *map, int x, int y, int id) : Cell (map, x, y), id (id), open (false) {}
+	static SDL_Texture *tex;
+
+	virtual void render (int x, int y, float alpha) {
+		if (!tex)
+			tex = Cell::create_texture (0);
+		if (alpha < 1.f) {
+			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_ADD);
+			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
+		} else {
+			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+		}
+		if (open)
+			SDL_SetTextureColorMod (tex, 0, 0, 0);
+		else
+			SDL_SetTextureColorMod (tex, 128, 0, 128);
+		Cell::render (x, y, tex);
+	};
+
+	virtual bool can_pass (int incoming_dir) { return open; }
+
+	void toggle () {
+		open = !open;
+	}
+};
+
+SDL_Texture *DoorCell::tex = NULL;
+
+struct TriggerCell : Cell {
+	DoorCell *door;
+	int id;
+
+	TriggerCell (Map *map, int x, int y, DoorCell *door, int id) : Cell (map, x, y), door (door), id (id) {}
+	static SDL_Texture *tex;
+
+	virtual void render (int x, int y, float alpha) {
+		if (!tex)
+			tex = Cell::create_texture (12);
+		if (alpha < 1.f) return;
+		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+		SDL_SetTextureColorMod (tex, 128, 0, 128);
+		Cell::render (x, y, tex);
+	};
+
+	virtual bool can_pass (int incoming_dir) { return true; }
+
+	virtual void pass (Cass *cass, Undo **undo = NULL) {
+		if (undo) {
+			*undo = new DoorToggleUndo (door);
+		}
+		door->toggle ();
+	}
+};
+
+SDL_Texture *TriggerCell::tex = NULL;
+
 struct State {
 	bool finished;
 	Cass cass;
@@ -282,10 +350,22 @@ struct State {
 			for (y = 0; y < MAP_HEIGHT; y++) {
 				switch (text_map[y][x]) {
 				case '#': map.cells[x][y] = new WallCell (&map, x, y); break;
-				case 'C': cass.x = x; cass.y = y; // Deliverate fallthrough
+				case '@': cass.x = x; cass.y = y; // Deliverate fallthrough
 				case '.': map.cells[x][y] = new EmptyCell (&map, x, y); break;
-				case 'X': map.cells[x][y] = new TrapCell (&map, x, y); break;
-				case 'p': map.cells[x][y] = new PushableBlockCell (&map, x, y); break;
+				case '^': map.cells[x][y] = new TrapCell (&map, x, y); break;
+				case '%': map.cells[x][y] = new PushableBlockCell (&map, x, y); break;
+				}
+				if (text_map[y][x] >= 'a' && text_map[y][x] <= 'z') {
+					int id = text_map[y][x] - 'a';
+					for (int sx = 0; sx < MAP_WIDTH; sx++) {
+						for (int sy = 0; sy < MAP_HEIGHT; sy++) {
+							if (text_map[sy][sx] == 'A' + id) {
+								DoorCell *door = new DoorCell (&map, x, y, id);
+								map.cells[sx][sy] = door;
+								map.cells[x][y] = new TriggerCell (&map, x, y, door, id);
+							}
+						}
+					}
 				}
 			}
 		}
@@ -400,6 +480,12 @@ void PushUndo::apply (State *state) {
 	state->map.cells[new_x][new_y] = old_cell;
 }
 
+void DoorToggleUndo::apply (State *state) {
+	if (next)
+		next->apply (state);
+	door->toggle ();
+}
+
 void recurse (State *state, float alpha) {
 	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT };
 	static const int weights[4] = { 3, 2, 1, 2 };
@@ -461,21 +547,21 @@ int main (int argc, char *argv[]) {
 		"#........#.........#",
 		"###.#.#.##.........#",
 		"#.....#..#.........#",
-		"#.#.#.##...........#",
-		"#.p....X.#......X..#",
+		"#.#.#.##.A.........#",
+		"#.%....^.#......^..#",
 		"#.###.##.#.........#",
-		"#.#.#.#..#.........#",
-		"#...#C#.###.#.#.#.##",
-		"###.#####.p........#",
+		"#.#.#.#.a#.........#",
+		"#...#@..###.#.#.#.##",
+		"###.#####.%........#",
 		"#...#.....#.#.#.#.##",
 		"###.#.#####........#",
-		"#.....#..##.##..#.X#",
-		"#####.##.#...#X.#..#",
-		"#......X.#.#.#..#..#",
+		"#.....#..##.##..#.^#",
+		"#####.##.#...#^.#..#",
+		"#......^.#.#.#..#..#",
 		"#.######.#...#.#####",
 		"#........#.#.#.#...#",
 		"#####.####...#.#...#",
-		"#.X........#...p...#",
+		"#.^........#...%...#",
 		"####################",
 	};
 	State current_state (textMap);
