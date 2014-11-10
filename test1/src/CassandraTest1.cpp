@@ -105,13 +105,15 @@ struct PushUndo : Undo {
 	int new_x, new_y;
 	int old_x, old_y;
 	Cell *old_cell;
+	Cell *pushable;
 
-	PushUndo (int new_x, int new_y, int old_x, int old_y, Cell *old_cell) {
+	PushUndo (int new_x, int new_y, int old_x, int old_y, Cell *old_cell, Cell *pushable) {
 		this->new_x = new_x;
 		this->new_y = new_y;
 		this->old_x = old_x;
 		this->old_y = old_y;
 		this->old_cell = old_cell;
+		this->pushable = pushable;
 	}
 
 	void apply (State *state);
@@ -132,6 +134,7 @@ struct Cell {
 	virtual void render (int x, int y, float alpha) = 0;
 	virtual bool can_pass (int incoming_dir) = 0;
 	virtual void pass (Cass *cass, Undo **undo = NULL) {};
+	virtual bool is_hole () { return false; }
 
 protected:
 	void  render (int x, int y, SDL_Texture *tex) {
@@ -214,6 +217,8 @@ struct TrapCell : Cell {
 	virtual void pass (Cass *cass, Undo **undo = NULL) {
 		cass->dead = true;
 	}
+
+	virtual bool is_hole () { return true; }
 };
 
 SDL_Texture *TrapCell::tex = NULL;
@@ -245,16 +250,22 @@ struct PushableBlockCell : Cell {
 	virtual void pass (Cass *cass, Undo **undo = NULL) {
 		int newx = x + dirs[cass->dir][0];
 		int newy = y + dirs[cass->dir][1];
+		bool over_hole = map->cells[newx][newy]->is_hole ();
 		if (undo) {
-			*undo = new PushUndo (newx, newy, x, y, map->cells[newx][newy]);
+			*undo = new PushUndo (newx, newy, x, y, map->cells[newx][newy], over_hole ? this : NULL);
 		} else {
 			delete map->cells[newx][newy];
 		}
-		map->cells[newx][newy] = this;
-		// FIXME Detect pits and make both pit+pushable disappear
 		map->cells[x][y] = new EmptyCell (map, x, y);
-		x = newx;
-		y = newy;
+		if (over_hole) {
+			map->cells[newx][newy] = new EmptyCell (map, newx, newy);
+			if (!undo)
+				delete this;
+		} else {
+			map->cells[newx][newy] = this;
+			x = newx;
+			y = newy;
+		}
 	}
 };
 
@@ -378,9 +389,14 @@ void PushUndo::apply (State *state) {
 	if (next)
 		next->apply (state);
 	delete state->map.cells[old_x][old_y];
-	state->map.cells[old_x][old_y] = state->map.cells[new_x][new_y];
-	state->map.cells[old_x][old_y]->x = old_x;
-	state->map.cells[old_x][old_y]->y = old_y;
+	if (pushable) {
+		delete state->map.cells[new_x][new_y];
+		state->map.cells[old_x][old_y] = pushable;
+	} else {
+		state->map.cells[old_x][old_y] = state->map.cells[new_x][new_y];
+		state->map.cells[old_x][old_y]->x = old_x;
+		state->map.cells[old_x][old_y]->y = old_y;
+	}
 	state->map.cells[new_x][new_y] = old_cell;
 }
 
@@ -451,9 +467,9 @@ int main (int argc, char *argv[]) {
 		"#.#.#.#..#.........#",
 		"#...#C#.###.#.#.#.##",
 		"###.#####.p........#",
-		"#...#.....##.#.#X#.#",
+		"#...#.....#.#.#.#.##",
 		"###.#.#####........#",
-		"#.....#..##.##..#..#",
+		"#.....#..##.##..#.X#",
 		"#####.##.#...#X.#..#",
 		"#......X.#.#.#..#..#",
 		"#.######.#...#.#####",
