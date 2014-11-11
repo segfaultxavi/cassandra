@@ -20,6 +20,7 @@
 
 SDL_Window *win;
 SDL_Renderer *renderer;
+SDL_Texture *ghostplane;
 
 static const int dirs[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 
@@ -38,6 +39,10 @@ struct Cass {
 			tex = SDL_CreateTextureFromSurface (renderer, surf);
 			SDL_FreeSurface (surf);
 		}
+	}
+
+	~Cass () {
+		SDL_DestroyTexture (tex);
 	}
 
 	void render (float alpha) {
@@ -264,6 +269,7 @@ struct PushableBlockCell : Cell {
 		} else {
 			delete map->cells[newx][newy];
 		}
+		// FIXME This destroys door blocks (and a ptr is held by the trigger)
 		map->cells[x][y] = new EmptyCell (map, x, y);
 		if (over_hole) {
 			map->cells[newx][newy] = new EmptyCell (map, newx, newy);
@@ -360,7 +366,7 @@ struct State {
 					for (int sx = 0; sx < MAP_WIDTH; sx++) {
 						for (int sy = 0; sy < MAP_HEIGHT; sy++) {
 							if (text_map[sy][sx] == 'A' + id) {
-								DoorCell *door = new DoorCell (&map, x, y, id);
+								DoorCell *door = new DoorCell (&map, sx, sy, id);
 								map.cells[sx][sy] = door;
 								map.cells[x][y] = new TriggerCell (&map, x, y, door, id);
 							}
@@ -542,6 +548,8 @@ int main (int argc, char *argv[]) {
 		return 1;
 	}
 
+	ghostplane = SDL_CreateTexture (renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+
 	static const char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
 		"####################",
 		"#........#.........#",
@@ -582,17 +590,25 @@ int main (int argc, char *argv[]) {
 			}
 		}
 
+		// Render ghosts on ghostplane
+		SDL_SetRenderTarget (renderer, ghostplane);
 		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
 		SDL_RenderClear (renderer);
-		current_state.render_background (1.f);
-
 		recurse (&current_state, 1.f);
 
+		// Render solid world
+		SDL_SetRenderTarget (renderer, NULL);
+		current_state.render_background (1.f);
 		current_state.render_cass (1.f);
+
+		// Render ghostplane
+		SDL_SetTextureBlendMode (ghostplane, SDL_BLENDMODE_BLEND);
+		SDL_SetTextureAlphaMod (ghostplane, 128);
+		SDL_RenderCopy (renderer, ghostplane, NULL, NULL);
 		SDL_RenderPresent (renderer);
 	}
 
-	SDL_DestroyTexture (Cass::tex);
+	SDL_DestroyTexture (ghostplane);
 
 	return 0;
 }
