@@ -66,6 +66,7 @@ SDL_Texture *Cass::tex = NULL;
 
 struct Cell;
 struct DoorCell;
+struct PushableBlockCell;
 struct State;
 
 struct Undo {
@@ -107,17 +108,12 @@ struct CassUndo : Undo {
 };
 
 struct PushUndo : Undo {
-	int new_x, new_y;
 	int old_x, old_y;
-	Cell *old_cell;
-	Cell *pushable;
+	PushableBlockCell *pushable;
 
-	PushUndo (int new_x, int new_y, int old_x, int old_y, Cell *old_cell, Cell *pushable) {
-		this->new_x = new_x;
-		this->new_y = new_y;
+	PushUndo (int old_x, int old_y, PushableBlockCell *pushable) {
 		this->old_x = old_x;
 		this->old_y = old_y;
-		this->old_cell = old_cell;
 		this->pushable = pushable;
 	}
 
@@ -237,8 +233,17 @@ struct TrapCell : Cell {
 SDL_Texture *TrapCell::tex = NULL;
 
 struct PushableBlockCell : Cell {
-	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y) {}
 	static SDL_Texture *tex;
+	Cell *block_below;
+
+	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y) {
+		block_below = new EmptyCell (map, x, y);
+	}
+
+	~PushableBlockCell () {
+		if (block_below)
+			delete block_below;
+	}
 
 	virtual void render (int x, int y, float alpha) {
 		if (!tex)
@@ -261,24 +266,31 @@ struct PushableBlockCell : Cell {
 	}
 
 	virtual void pass (Cass *cass, Undo **undo = NULL) {
+		int oldx = x;
+		int oldy = y;
 		int newx = x + dirs[cass->dir][0];
 		int newy = y + dirs[cass->dir][1];
-		bool over_hole = map->cells[newx][newy]->is_hole ();
+
+		map->cells[oldx][oldy] = block_below;
+		block_below = map->cells[newx][newy];
+		map->cells[newx][newy] = this;
+		x = newx;
+		y = newy;
+
 		if (undo) {
-			*undo = new PushUndo (newx, newy, x, y, map->cells[newx][newy], over_hole ? this : NULL);
-		} else {
-			delete map->cells[newx][newy];
+			*undo = new PushUndo (oldx, oldy, this);
 		}
-		// FIXME This destroys door blocks (and a ptr is held by the trigger)
-		map->cells[x][y] = new EmptyCell (map, x, y);
-		if (over_hole) {
+		Undo *subundo = NULL;
+		map->cells[oldx][oldy]->pass (cass, undo ? &subundo : NULL);
+		if (subundo) {
+			(*undo)->add (subundo);
+		}
+
+		if (block_below->is_hole ()) {
 			map->cells[newx][newy] = new EmptyCell (map, newx, newy);
-			if (!undo)
-				delete this;
-		} else {
-			map->cells[newx][newy] = this;
-			x = newx;
-			y = newy;
+			if (!undo) {
+				delete this; /* And block_below */
+			}
 		}
 	}
 };
@@ -474,16 +486,16 @@ void CassUndo::apply (State *state) {
 void PushUndo::apply (State *state) {
 	if (next)
 		next->apply (state);
-	delete state->map.cells[old_x][old_y];
-	if (pushable) {
+	int new_x = pushable->x;
+	int new_y = pushable->y;
+	if (pushable->block_below->is_hole ()) {
 		delete state->map.cells[new_x][new_y];
-		state->map.cells[old_x][old_y] = pushable;
-	} else {
-		state->map.cells[old_x][old_y] = state->map.cells[new_x][new_y];
-		state->map.cells[old_x][old_y]->x = old_x;
-		state->map.cells[old_x][old_y]->y = old_y;
 	}
-	state->map.cells[new_x][new_y] = old_cell;
+	state->map.cells[new_x][new_y] = pushable->block_below;
+	pushable->block_below = state->map.cells[old_x][old_y];
+	state->map.cells[old_x][old_y] = pushable;
+	pushable->x = old_x;
+	pushable->y = old_y;
 }
 
 void DoorToggleUndo::apply (State *state) {
@@ -555,10 +567,10 @@ int main (int argc, char *argv[]) {
 		"#c.......C.........#",
 		"###.#.#.##.........#",
 		"#.....#..#.........#",
-		"#.#.#.##.A.........#",
-		"#.%....^.#......^..#",
+		"#.#.#.##.A..%......#",
+		"#.%....^.#..b...^..#",
 		"#.###.##.#.........#",
-		"#.#.#.#.a#b........#",
+		"#.#.#.#.a#.........#",
 		"#...#@..###.#.#.#.##",
 		"###.#####.%........#",
 		"#...#.....#.#.#.#.##",
