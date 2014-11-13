@@ -22,6 +22,11 @@ SDL_Window *win;
 SDL_Renderer *renderer;
 SDL_Texture *ghostplane;
 
+struct Cell;
+struct DoorCell;
+struct PushableBlockCell;
+struct State;
+
 static const int dirs[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 
 struct Cass {
@@ -63,11 +68,6 @@ struct Cass {
 };
 
 SDL_Texture *Cass::tex = NULL;
-
-struct Cell;
-struct DoorCell;
-struct PushableBlockCell;
-struct State;
 
 struct Undo {
 	Undo *next;
@@ -140,13 +140,13 @@ struct Cell {
 
 	virtual ~Cell () {}
 
-	virtual void render (int x, int y, float alpha) = 0;
+	virtual void render (float alpha) = 0;
 	virtual bool can_pass (int incoming_dir) = 0;
 	virtual void pass (Cass *cass, Undo **undo = NULL) {};
 	virtual bool is_hole () { return false; }
 
 protected:
-	void  render (int x, int y, SDL_Texture *tex) {
+	void  private_render (SDL_Texture *tex) {
 		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
 		SDL_RenderCopy (renderer, tex, NULL, &rect);
 	}
@@ -169,13 +169,13 @@ struct EmptyCell : Cell {
 	EmptyCell (Map *map, int x, int y) : Cell (map, x, y) {}
 	static SDL_Texture *tex;
 
-	virtual void render (int x, int y, float alpha) {
+	virtual void render (float alpha) {
 		if (!tex)
 			tex = Cell::create_texture (0);
 		if (alpha < 1.f) return;
 		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
 		SDL_SetTextureColorMod (tex, 0, 0, 0);
-		Cell::render (x, y, tex);
+		Cell::private_render (tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) { return true; }
@@ -187,13 +187,13 @@ struct WallCell : Cell {
 	WallCell (Map *map, int x, int y) : Cell (map, x, y) {}
 	static SDL_Texture *tex;
 
-	virtual void render (int x, int y, float alpha) {
+	virtual void render (float alpha) {
 		if (!tex)
 			tex = Cell::create_texture (0);
 		if (alpha < 1.f) return;
 		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
 		SDL_SetTextureColorMod (tex, 0, 0, 255);
-		Cell::render (x, y, tex);
+		Cell::private_render (tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) { return false; }
@@ -203,23 +203,10 @@ SDL_Texture *WallCell::tex = NULL;
 
 struct TrapCell : Cell {
 	TrapCell (Map *map, int x, int y) : Cell (map, x, y) {}
-	static SDL_Texture *tex;
 
-	virtual void render (int x, int y, float alpha) {
+	virtual void render (float alpha) {
+		/* Invisible! */
 		return;
-		if (!tex)
-			tex = Cell::create_texture (4);
-		if (alpha < 1.f) return;
-		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
-		SDL_SetTextureColorMod (tex, 255, 0, 0);
-		SDL_Rect rect = { 0, 0, CELL_WIDTH / 7, CELL_HEIGHT / 7 };
-		for (int sx = 0; sx < 3; sx++) {
-			for (int sy = 0; sy < 3; sy++) {
-				rect.x = (int)((x + sx / 3.f + 1 / 7.f) * CELL_WIDTH);
-				rect.y = (int)((y + sy / 3.f + 1 / 7.f) * CELL_WIDTH);
-				SDL_RenderFillRect (renderer, &rect);
-			}
-		}
 	};
 
 	virtual bool can_pass (int incoming_dir) { return true; }
@@ -229,8 +216,6 @@ struct TrapCell : Cell {
 
 	virtual bool is_hole () { return true; }
 };
-
-SDL_Texture *TrapCell::tex = NULL;
 
 struct PushableBlockCell : Cell {
 	static SDL_Texture *tex;
@@ -245,7 +230,7 @@ struct PushableBlockCell : Cell {
 			delete block_below;
 	}
 
-	virtual void render (int x, int y, float alpha) {
+	virtual void render (float alpha) {
 		if (!tex)
 			tex = Cell::create_texture (2);
 		if (alpha < 1.f) {
@@ -256,7 +241,7 @@ struct PushableBlockCell : Cell {
 			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
 			SDL_SetTextureColorMod (tex, 0, 255, 255);
 		}
-		Cell::render (x, y, tex);
+		Cell::private_render (tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) {
@@ -304,7 +289,7 @@ struct DoorCell : Cell {
 	DoorCell (Map *map, int x, int y, int id) : Cell (map, x, y), id (id), open (false) {}
 	static SDL_Texture *tex;
 
-	virtual void render (int x, int y, float alpha) {
+	virtual void render (float alpha) {
 		if (!tex)
 			tex = Cell::create_texture (0);
 		if (alpha < 1.f) {
@@ -317,7 +302,7 @@ struct DoorCell : Cell {
 			SDL_SetTextureColorMod (tex, 0, 0, 0);
 		else
 			SDL_SetTextureColorMod (tex, 128, 0, 128);
-		Cell::render (x, y, tex);
+		Cell::private_render (tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) { return open; }
@@ -336,13 +321,13 @@ struct TriggerCell : Cell {
 	TriggerCell (Map *map, int x, int y, DoorCell *door, int id) : Cell (map, x, y), door (door), id (id) {}
 	static SDL_Texture *tex;
 
-	virtual void render (int x, int y, float alpha) {
+	virtual void render (float alpha) {
 		if (!tex)
 			tex = Cell::create_texture (12);
 		if (alpha < 1.f) return;
 		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
 		SDL_SetTextureColorMod (tex, 128, 0, 128);
-		Cell::render (x, y, tex);
+		Cell::private_render (tex);
 	};
 
 	virtual bool can_pass (int incoming_dir) { return true; }
@@ -464,7 +449,7 @@ struct State {
 	void render_background (float alpha) {
 		for (int x = 0; x < MAP_WIDTH; x++) {
 			for (int y = 0; y < MAP_HEIGHT; y++) {
-				map.cells[x][y]->render (x, y, alpha);
+				map.cells[x][y]->render (alpha);
 			}
 		}
 	}
