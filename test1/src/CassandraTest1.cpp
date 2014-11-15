@@ -11,12 +11,15 @@
 #endif
 #endif  // _DEBUG
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 800
+#define SCREEN_WIDTH 640
+#define SCREEN_HEIGHT 640
 #define MAP_WIDTH 20
 #define MAP_HEIGHT 20
 #define CELL_WIDTH (SCREEN_WIDTH / MAP_WIDTH)
 #define CELL_HEIGHT (SCREEN_HEIGHT / MAP_HEIGHT)
+
+extern unsigned char tiles_data[];
+SDL_Texture *tiles;
 
 SDL_Window *win;
 SDL_Renderer *renderer;
@@ -29,45 +32,40 @@ struct State;
 
 static const int dirs[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 
-struct Cass {
-	int x, y;
-	int dir;
-	static SDL_Texture *tex;
-	bool dead;
+struct Renderable {
+	int tilex, tiley;
 
-	Cass () {
-		if (tex == NULL) {
-			SDL_Surface *surf = SDL_CreateRGBSurface (SDL_SWSURFACE, CELL_WIDTH, CELL_HEIGHT, 32, 0, 0, 0, 0);
-			SDL_FillRect (surf, NULL, 0x00000000);
-			SDL_Rect rect = { 7, 7, CELL_WIDTH - 14, CELL_HEIGHT - 14 };
-			SDL_FillRect (surf, &rect, 0xFFFFFFFF); // ARGB
-			tex = SDL_CreateTextureFromSurface (renderer, surf);
-			SDL_FreeSurface (surf);
-		}
-	}
+	Renderable (int tilex, int tiley) : tilex (tilex), tiley (tiley) {}
 
-	~Cass () {
-		SDL_DestroyTexture (tex);
-	}
-
-	void render (float alpha) {
-		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
+	void render (int x, int y, float alpha) {
+		SDL_Rect src_rect = { tilex * 32, tiley * 32, 32, 32 };
+		SDL_Rect dst_rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
 		if (alpha == 1.f) {
-			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
-			SDL_SetTextureColorMod (tex, 255, 255, 0);
+			SDL_SetTextureBlendMode (tiles, SDL_BLENDMODE_NONE);
 		} else {
-			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_ADD);
-			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
-			SDL_SetTextureColorMod (tex, 255, 255, 255);
+			SDL_SetTextureBlendMode (tiles, SDL_BLENDMODE_ADD);
+			SDL_SetTextureAlphaMod (tiles, (Uint8)(alpha * 255));
 		}
-		if (dead) {
-			SDL_SetTextureColorMod (tex, 255, 0, 0);
-		}
-		SDL_RenderCopy (renderer, tex, NULL, &rect);
+		SDL_RenderCopy (renderer, tiles, &src_rect, &dst_rect);
 	}
 };
 
-SDL_Texture *Cass::tex = NULL;
+struct Cass : Renderable {
+	int x, y;
+	int dir;
+	bool dead;
+
+	Cass () : Renderable (4, 0) {}
+
+	void render (float alpha) {
+		if (dead) {
+			tilex = 8; tiley = 3;
+		} else {
+			tilex = 4; tiley = 0;
+		}
+		Renderable::render (x, y, alpha);
+	}
+};
 
 struct Undo {
 	Undo *next;
@@ -132,82 +130,44 @@ struct Map {
 	Cell *cells[MAP_WIDTH][MAP_HEIGHT];
 };
 
-struct Cell {
+struct Cell : Renderable {
 	Map *map;
 	int x, y;
+	bool inmutable;
 
-	Cell (Map *map, int x, int y) : map (map), x (x), y (y) {}
+	Cell (Map *map, int x, int y, int tilex, int tiley, bool inmutable) :
+		Renderable (tilex, tiley), map (map), x (x), y (y), inmutable (inmutable) {}
 
 	virtual ~Cell () {}
 
-	virtual void render (float alpha) = 0;
+	virtual void render (float alpha) {
+		if (inmutable && alpha < 1.0)
+			return;
+		Renderable::render (x, y, alpha);
+	};
+
 	virtual bool can_pass (int incoming_dir) = 0;
 	virtual void pass (Cass *cass, Undo **undo = NULL) {};
 	virtual bool is_hole () { return false; }
-
-protected:
-	void  private_render (SDL_Texture *tex) {
-		SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
-		SDL_RenderCopy (renderer, tex, NULL, &rect);
-	}
-
-	SDL_Texture *create_texture (int inset) {
-		SDL_Texture *tex;
-
-		SDL_Surface *surf = SDL_CreateRGBSurface (SDL_SWSURFACE, CELL_WIDTH, CELL_HEIGHT, 32, 0, 0, 0, 0);
-		SDL_FillRect (surf, NULL, 0x00000000);
-		SDL_Rect rect = { inset, inset, CELL_WIDTH - inset * 2, CELL_HEIGHT - inset * 2 };
-		SDL_FillRect (surf, &rect, 0xFFFFFFFF); // ARGB
-		tex = SDL_CreateTextureFromSurface (renderer, surf);
-		SDL_FreeSurface (surf);
-
-		return tex;
-	}
 };
 
 struct EmptyCell : Cell {
-	EmptyCell (Map *map, int x, int y) : Cell (map, x, y) {}
-	static SDL_Texture *tex;
+	EmptyCell (Map *map, int x, int y) : Cell (map, x, y, 2, 6, true) {}
 
 	virtual void render (float alpha) {
-		if (!tex)
-			tex = Cell::create_texture (0);
-		if (alpha < 1.f) return;
-		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
-		SDL_SetTextureColorMod (tex, 0, 0, 0);
-		Cell::private_render (tex);
-	};
+	}
 
 	virtual bool can_pass (int incoming_dir) { return true; }
 };
 
-SDL_Texture *EmptyCell::tex = NULL;
-
 struct WallCell : Cell {
-	WallCell (Map *map, int x, int y) : Cell (map, x, y) {}
-	static SDL_Texture *tex;
-
-	virtual void render (float alpha) {
-		if (!tex)
-			tex = Cell::create_texture (0);
-		if (alpha < 1.f) return;
-		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
-		SDL_SetTextureColorMod (tex, 0, 0, 255);
-		Cell::private_render (tex);
-	};
+	WallCell (Map *map, int x, int y) : Cell (map, x, y, 0, 12, true) {}
 
 	virtual bool can_pass (int incoming_dir) { return false; }
 };
 
-SDL_Texture *WallCell::tex = NULL;
-
 struct TrapCell : Cell {
-	TrapCell (Map *map, int x, int y) : Cell (map, x, y) {}
-
-	virtual void render (float alpha) {
-		/* Invisible! */
-		return;
-	};
+	TrapCell (Map *map, int x, int y) : Cell (map, x, y, 1, 6, true) {}
 
 	virtual bool can_pass (int incoming_dir) { return true; }
 	virtual void pass (Cass *cass, Undo **undo = NULL) {
@@ -218,10 +178,9 @@ struct TrapCell : Cell {
 };
 
 struct PushableBlockCell : Cell {
-	static SDL_Texture *tex;
 	Cell *block_below;
 
-	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y) {
+	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y, 2, 5, false) {
 		block_below = new EmptyCell (map, x, y);
 	}
 
@@ -229,20 +188,6 @@ struct PushableBlockCell : Cell {
 		if (block_below)
 			delete block_below;
 	}
-
-	virtual void render (float alpha) {
-		if (!tex)
-			tex = Cell::create_texture (2);
-		if (alpha < 1.f) {
-			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_ADD);
-			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
-			SDL_SetTextureColorMod (tex, 0, 255, 255);
-		} else {
-			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
-			SDL_SetTextureColorMod (tex, 0, 255, 255);
-		}
-		Cell::private_render (tex);
-	};
 
 	virtual bool can_pass (int incoming_dir) {
 		int newx = x + dirs[incoming_dir][0];
@@ -280,29 +225,19 @@ struct PushableBlockCell : Cell {
 	}
 };
 
-SDL_Texture *PushableBlockCell::tex = NULL;
-
 struct DoorCell : Cell {
 	int id;
 	bool open;
 
-	DoorCell (Map *map, int x, int y, int id) : Cell (map, x, y), id (id), open (false) {}
-	static SDL_Texture *tex;
+	DoorCell (Map *map, int x, int y, int id) : Cell (map, x, y, 3, 5, false), id (id), open (false) {}
 
 	virtual void render (float alpha) {
-		if (!tex)
-			tex = Cell::create_texture (0);
-		if (alpha < 1.f) {
-			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_ADD);
-			SDL_SetTextureAlphaMod (tex, (Uint8)(alpha * 255));
+		if (open) {
+			tilex = 4; tiley = 5;
 		} else {
-			SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
+			tilex = 3; tiley = 5;
 		}
-		if (open)
-			SDL_SetTextureColorMod (tex, 0, 0, 0);
-		else
-			SDL_SetTextureColorMod (tex, 128, 0, 128);
-		Cell::private_render (tex);
+		Cell::render (alpha);
 	};
 
 	virtual bool can_pass (int incoming_dir) { return open; }
@@ -312,23 +247,11 @@ struct DoorCell : Cell {
 	}
 };
 
-SDL_Texture *DoorCell::tex = NULL;
-
 struct TriggerCell : Cell {
 	DoorCell *door;
 	int id;
 
-	TriggerCell (Map *map, int x, int y, DoorCell *door, int id) : Cell (map, x, y), door (door), id (id) {}
-	static SDL_Texture *tex;
-
-	virtual void render (float alpha) {
-		if (!tex)
-			tex = Cell::create_texture (12);
-		if (alpha < 1.f) return;
-		SDL_SetTextureBlendMode (tex, SDL_BLENDMODE_NONE);
-		SDL_SetTextureColorMod (tex, 128, 0, 128);
-		Cell::private_render (tex);
-	};
+	TriggerCell (Map *map, int x, int y, DoorCell *door, int id) : Cell (map, x, y, 2, 2, true), door (door), id (id) {}
 
 	virtual bool can_pass (int incoming_dir) { return true; }
 
@@ -339,8 +262,6 @@ struct TriggerCell : Cell {
 		door->toggle ();
 	}
 };
-
-SDL_Texture *TriggerCell::tex = NULL;
 
 struct State {
 	bool finished;
@@ -545,6 +466,10 @@ int main (int argc, char *argv[]) {
 		return 1;
 	}
 
+	SDL_Surface *tiles_surface = SDL_LoadBMP ("..\\32x32_template_crop.bmp");
+	tiles = SDL_CreateTextureFromSurface (renderer, tiles_surface);
+	SDL_FreeSurface (tiles_surface);
+
 	ghostplane = SDL_CreateTexture (renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
 
 	static const char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
@@ -606,6 +531,7 @@ int main (int argc, char *argv[]) {
 	}
 
 	SDL_DestroyTexture (ghostplane);
+	SDL_DestroyTexture (tiles);
 
 	return 0;
 }
