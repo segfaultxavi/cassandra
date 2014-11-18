@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <crtdbg.h>
 #include <stdio.h>
+#include <memory.h>
 #include "SDL.h"
 
 #ifdef _DEBUG
@@ -128,6 +129,7 @@ struct DoorToggleUndo : Undo {
 
 struct Map {
 	Cell *cells[MAP_WIDTH][MAP_HEIGHT];
+	bool updates[MAP_WIDTH][MAP_HEIGHT];
 };
 
 struct Cell : Renderable {
@@ -144,6 +146,7 @@ struct Cell : Renderable {
 		if (inmutable && alpha < 1.0)
 			return;
 		Renderable::render (x, y, alpha);
+		map->updates[x][y] = true;
 	};
 
 	virtual bool can_pass (int incoming_dir) = 0;
@@ -154,20 +157,17 @@ struct Cell : Renderable {
 struct EmptyCell : Cell {
 	EmptyCell (Map *map, int x, int y) : Cell (map, x, y, 2, 6, true) {}
 
-	virtual void render (float alpha) {
-	}
-
 	virtual bool can_pass (int incoming_dir) { return true; }
 };
 
 struct WallCell : Cell {
-	WallCell (Map *map, int x, int y) : Cell (map, x, y, 0, 12, true) {}
+	WallCell (Map *map, int x, int y) : Cell (map, x, y, 0, 5, true) {}
 
 	virtual bool can_pass (int incoming_dir) { return false; }
 };
 
 struct TrapCell : Cell {
-	TrapCell (Map *map, int x, int y) : Cell (map, x, y, 1, 6, true) {}
+	TrapCell (Map *map, int x, int y) : Cell (map, x, y, 2, 6, true) {}
 
 	virtual bool can_pass (int incoming_dir) { return true; }
 	virtual void pass (Cass *cass, Undo **undo = NULL) {
@@ -180,7 +180,7 @@ struct TrapCell : Cell {
 struct PushableBlockCell : Cell {
 	Cell *block_below;
 
-	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y, 2, 5, false) {
+	PushableBlockCell (Map *map, int x, int y) : Cell (map, x, y, 2, 9, false) {
 		block_below = new EmptyCell (map, x, y);
 	}
 
@@ -265,10 +265,11 @@ struct TriggerCell : Cell {
 
 struct State {
 	bool finished;
+	bool show_ghosts;
 	Cass cass;
 	Map map;
 
-	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) {
+	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]): finished (false), show_ghosts (false) {
 		int x, y;
 		for (x = 0; x < MAP_WIDTH; x++) {
 			for (y = 0; y < MAP_HEIGHT; y++) {
@@ -311,6 +312,7 @@ struct State {
 		int dir = -1;
 		switch (keycode) {
 		case SDLK_ESCAPE:
+		case SDLK_SPACE:
 			return true;
 		case SDLK_UP:
 			dir = 0;
@@ -336,6 +338,9 @@ struct State {
 		switch (keycode) {
 		case SDLK_ESCAPE:
 			finished = true;
+			break;
+		case SDLK_SPACE:
+			show_ghosts = !show_ghosts;
 			break;
 		case SDLK_UP:
 			dir = 0;
@@ -377,6 +382,7 @@ struct State {
 
 	void render_cass (float alpha) {
 		cass.render (alpha);
+		map.updates[cass.x][cass.y] = true;
 	}
 };
 
@@ -410,11 +416,13 @@ void DoorToggleUndo::apply (State *state) {
 	door->toggle ();
 }
 
-void recurse (State *state, float alpha) {
+void recurse (State *state, float alpha, int depth) {
 	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT };
 	static const int weights[4] = { 3, 2, 1, 2 };
 	int probs[4], i;
 	float total_prob = 0.f;
+
+	if (depth > 1) return;
 
 	if (alpha < 0.001f) return;
 
@@ -432,11 +440,9 @@ void recurse (State *state, float alpha) {
 			Undo *undo;
 			float p = alpha * probs[i] / total_prob;
 			state->input (actions[i], &undo);
-			float p2 = 1.f - p; 
-			p2 = 1.f - (float)SDL_pow (p2, 8.0);
-			state->render_background (p2 * 0.8f);
-			state->render_cass (p2 * 0.8f);
-			recurse (state, p);
+			state->render_background (p);
+			state->render_cass (p);
+			recurse (state, p, depth + 1);
 			undo->apply (state);
 			delete undo;
 		}
@@ -512,21 +518,33 @@ int main (int argc, char *argv[]) {
 			}
 		}
 
-		// Render ghosts on ghostplane
-		SDL_SetRenderTarget (renderer, ghostplane);
-		SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-		SDL_RenderClear (renderer);
-		recurse (&current_state, 1.f);
-
 		// Render solid world
 		SDL_SetRenderTarget (renderer, NULL);
 		current_state.render_background (1.f);
 		current_state.render_cass (1.f);
 
-		// Render ghostplane
-		SDL_SetTextureBlendMode (ghostplane, SDL_BLENDMODE_BLEND);
-		SDL_SetTextureAlphaMod (ghostplane, 128);
-		SDL_RenderCopy (renderer, ghostplane, NULL, NULL);
+		if (current_state.show_ghosts) {
+			// Render ghosts on ghostplane
+			SDL_SetRenderTarget (renderer, ghostplane);
+			SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+			SDL_RenderClear (renderer);
+			memset (&current_state.map.updates, 0, sizeof (current_state.map.updates));
+			recurse (&current_state, 1.f, 0);
+
+			// Render ghostplane
+			SDL_SetRenderTarget (renderer, NULL);
+			SDL_SetTextureBlendMode (ghostplane, SDL_BLENDMODE_BLEND);
+			SDL_SetTextureAlphaMod (ghostplane, 128);
+			SDL_SetTextureColorMod (ghostplane, 128, 128, 256 / 2);
+			for (int x = 0; x < MAP_WIDTH; x++) {
+				for (int y = 0; y < MAP_HEIGHT; y++) {
+					if (current_state.map.updates[x][y]) {
+						SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
+						SDL_RenderCopy (renderer, ghostplane, &rect, &rect);
+					}
+				}
+			}
+		}
 		SDL_RenderPresent (renderer);
 	}
 
