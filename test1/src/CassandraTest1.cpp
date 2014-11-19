@@ -41,7 +41,7 @@ struct Renderable {
 	void render (int x, int y, float alpha) {
 		SDL_Rect src_rect = { tilex * 32, tiley * 32, 32, 32 };
 		SDL_Rect dst_rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
-		if (alpha == 1.f) {
+		if (alpha >= 1.f) {
 			SDL_SetTextureBlendMode (tiles, SDL_BLENDMODE_NONE);
 		} else {
 			SDL_SetTextureBlendMode (tiles, SDL_BLENDMODE_ADD);
@@ -143,7 +143,7 @@ struct Cell : Renderable {
 	virtual ~Cell () {}
 
 	virtual void render (float alpha) {
-		if (inmutable && alpha < 1.0)
+		if (inmutable && alpha <= 1.0)
 			return;
 		Renderable::render (x, y, alpha);
 		map->updates[x][y] = true;
@@ -201,6 +201,7 @@ struct PushableBlockCell : Cell {
 		int newx = x + dirs[cass->dir][0];
 		int newy = y + dirs[cass->dir][1];
 
+		/* FIXME: A PushableBlock should not go _over_ another block */
 		map->cells[oldx][oldy] = block_below;
 		block_below = map->cells[newx][newy];
 		map->cells[newx][newy] = this;
@@ -265,11 +266,12 @@ struct TriggerCell : Cell {
 
 struct State {
 	bool finished;
+	int max_depth;
 	bool show_ghosts;
 	Cass cass;
 	Map map;
 
-	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]): finished (false), show_ghosts (false) {
+	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]): finished (false), show_ghosts (false), max_depth (3) {
 		int x, y;
 		for (x = 0; x < MAP_WIDTH; x++) {
 			for (y = 0; y < MAP_HEIGHT; y++) {
@@ -296,7 +298,6 @@ struct State {
 		}
 		cass.dir = 0;
 		cass.dead = false;
-		finished = false;
 	}
 
 	~State () {
@@ -313,6 +314,8 @@ struct State {
 		switch (keycode) {
 		case SDLK_ESCAPE:
 		case SDLK_SPACE:
+		case SDLK_KP_PLUS:
+		case SDLK_KP_MINUS:
 			return true;
 		case SDLK_UP:
 			dir = 0;
@@ -341,6 +344,12 @@ struct State {
 			break;
 		case SDLK_SPACE:
 			show_ghosts = !show_ghosts;
+			break;
+		case SDLK_KP_PLUS:
+			max_depth++;
+			break;
+		case SDLK_KP_MINUS:
+			max_depth = max_depth > 1 ? max_depth - 1 : max_depth;
 			break;
 		case SDLK_UP:
 			dir = 0;
@@ -422,7 +431,7 @@ void recurse (State *state, float alpha, int depth) {
 	int probs[4], i;
 	float total_prob = 0.f;
 
-	if (depth > 1) return;
+	if (depth >= state->max_depth) return;
 
 	if (alpha < 0.001f) return;
 
@@ -440,8 +449,8 @@ void recurse (State *state, float alpha, int depth) {
 			Undo *undo;
 			float p = alpha * probs[i] / total_prob;
 			state->input (actions[i], &undo);
-			state->render_background (p);
-			state->render_cass (p);
+			state->render_background (p / state->max_depth);
+			state->render_cass (p / state->max_depth);
 			recurse (state, p, depth + 1);
 			undo->apply (state);
 			delete undo;
@@ -520,8 +529,8 @@ int main (int argc, char *argv[]) {
 
 		// Render solid world
 		SDL_SetRenderTarget (renderer, NULL);
-		current_state.render_background (1.f);
-		current_state.render_cass (1.f);
+		current_state.render_background (2.f);
+		current_state.render_cass (2.f);
 
 		if (current_state.show_ghosts) {
 			// Render ghosts on ghostplane
@@ -535,7 +544,6 @@ int main (int argc, char *argv[]) {
 			SDL_SetRenderTarget (renderer, NULL);
 			SDL_SetTextureBlendMode (ghostplane, SDL_BLENDMODE_BLEND);
 			SDL_SetTextureAlphaMod (ghostplane, 128);
-			SDL_SetTextureColorMod (ghostplane, 128, 128, 256 / 2);
 			for (int x = 0; x < MAP_WIDTH; x++) {
 				for (int y = 0; y < MAP_HEIGHT; y++) {
 					if (current_state.map.updates[x][y]) {
