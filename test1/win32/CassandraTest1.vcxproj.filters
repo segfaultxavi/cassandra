@@ -18,5 +18,8 @@
     <ClCompile Include="..\src\CassandraTest1.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\contrib\glew-1.11.0\src\glew.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

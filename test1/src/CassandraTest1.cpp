@@ -3,6 +3,7 @@
 #include <crtdbg.h>
 #include <stdio.h>
 #include <memory.h>
+#include <GL/glew.h>
 #include "SDL.h"
 
 #ifdef _DEBUG
@@ -23,6 +24,7 @@ extern unsigned char tiles_data[];
 SDL_Texture *tiles;
 
 SDL_Window *win;
+SDL_GLContext gl_context;
 SDL_Renderer *renderer;
 SDL_Texture *ghostplane;
 
@@ -466,12 +468,31 @@ int main (int argc, char *argv[]) {
 		return 1;
 	}
 
-	win = SDL_CreateWindow ("Cassandra Test 1", 50, 50, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+	win = SDL_CreateWindow ("Cassandra Test 1", 50, 50, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
 	if (win == NULL){
 		printf ("SDL_CreateWindow Error: %s\n", SDL_GetError ());
 		SDL_Quit ();
 		return 1;
 	}
+
+	gl_context = SDL_GL_CreateContext (win);
+	if (!gl_context) {
+		printf ("SDL_GL_CreateContext Error: %s\n", SDL_GetError ());
+	}
+
+	if (SDL_GL_MakeCurrent (win, gl_context) != 0) {
+		printf ("SDL_GL_MakeCurrent Error: %s\n", SDL_GetError ());
+	}
+
+	GLenum result = glewInit ();
+	if (result != GLEW_OK) {
+		printf ("glewInit Error: %s\n", glewGetErrorString (result));
+	}
+
+	printf ("GLRenderer: %s\n", glGetString (GL_RENDERER));
+	printf ("GLVendor: %s\n", glGetString (GL_VENDOR));
+	printf ("GLVersion: %s\n", glGetString (GL_VERSION));
+	printf ("GLSLVersion: %s\n", glGetString (GL_SHADING_LANGUAGE_VERSION));
 
 	renderer = SDL_CreateRenderer (win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 	if (renderer == NULL){
@@ -559,5 +580,6 @@ int main (int argc, char *argv[]) {
 	SDL_DestroyTexture (ghostplane);
 	SDL_DestroyTexture (tiles);
 
+	SDL_GL_DeleteContext (gl_context);
 	return 0;
 }
