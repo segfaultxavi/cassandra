@@ -21,12 +21,7 @@
 #define CELL_HEIGHT (SCREEN_HEIGHT / MAP_HEIGHT)
 
 extern unsigned char tiles_data[];
-SDL_Texture *tiles;
-
-SDL_Window *win;
-SDL_GLContext gl_context;
-SDL_Renderer *renderer;
-SDL_Texture *ghostplane;
+int tiles_width, tiles_height;
 
 struct Cell;
 struct DoorCell;
@@ -41,15 +36,19 @@ struct Renderable {
 	Renderable (int tilex, int tiley) : tilex (tilex), tiley (tiley) {}
 
 	void render (int x, int y, float alpha) {
-		SDL_Rect src_rect = { tilex * 32, tiley * 32, 32, 32 };
-		SDL_Rect dst_rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
 		if (alpha >= 1.f) {
-			SDL_SetTextureBlendMode (tiles, SDL_BLENDMODE_NONE);
+			glColor4f (1.f, 1.f, 1.f, 1.f);
 		} else {
-			SDL_SetTextureBlendMode (tiles, SDL_BLENDMODE_ADD);
-			SDL_SetTextureAlphaMod (tiles, (Uint8)(alpha * 255));
+			glColor4f (1.f, 1.f, 1.f, alpha);
 		}
-		SDL_RenderCopy (renderer, tiles, &src_rect, &dst_rect);
+		glBegin (GL_TRIANGLE_STRIP);
+		for (int sx = 0; sx < 2; sx++) {
+			for (int sy = 0; sy < 2; sy++) {
+				glTexCoord2f ((tilex + sx) * 32 / (GLfloat)tiles_width, (tiley + sy) * 32 / (GLfloat)tiles_height);
+				glVertex2i ((x + sx) * CELL_WIDTH, (y + sy) * CELL_HEIGHT);
+			}
+		}
+		glEnd ();
 	}
 };
 
@@ -131,7 +130,6 @@ struct DoorToggleUndo : Undo {
 
 struct Map {
 	Cell *cells[MAP_WIDTH][MAP_HEIGHT];
-	bool updates[MAP_WIDTH][MAP_HEIGHT];
 };
 
 struct Cell : Renderable {
@@ -148,7 +146,6 @@ struct Cell : Renderable {
 		if (inmutable && alpha <= 1.0)
 			return;
 		Renderable::render (x, y, alpha);
-		map->updates[x][y] = true;
 	};
 
 	virtual bool can_pass (int incoming_dir) = 0;
@@ -393,7 +390,6 @@ struct State {
 
 	void render_cass (float alpha) {
 		cass.render (alpha);
-		map.updates[cass.x][cass.y] = true;
 	}
 };
 
@@ -451,8 +447,8 @@ void recurse (State *state, float alpha, int depth) {
 			Undo *undo;
 			float p = alpha * probs[i] / total_prob;
 			state->input (actions[i], &undo);
-			state->render_background (p / state->max_depth);
-			state->render_cass (p / state->max_depth);
+			state->render_background (p);
+			state->render_cass (p);
 			recurse (state, p, depth + 1);
 			undo->apply (state);
 			delete undo;
@@ -468,14 +464,15 @@ int main (int argc, char *argv[]) {
 		return 1;
 	}
 
-	win = SDL_CreateWindow ("Cassandra Test 1", 50, 50, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+
+	SDL_Window *win = SDL_CreateWindow ("Cassandra Test 1", 50, 50, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
 	if (win == NULL){
 		printf ("SDL_CreateWindow Error: %s\n", SDL_GetError ());
 		SDL_Quit ();
 		return 1;
 	}
 
-	gl_context = SDL_GL_CreateContext (win);
+	SDL_GLContext gl_context = SDL_GL_CreateContext (win);
 	if (!gl_context) {
 		printf ("SDL_GL_CreateContext Error: %s\n", SDL_GetError ());
 	}
@@ -494,19 +491,56 @@ int main (int argc, char *argv[]) {
 	printf ("GLVersion: %s\n", glGetString (GL_VERSION));
 	printf ("GLSLVersion: %s\n", glGetString (GL_SHADING_LANGUAGE_VERSION));
 
-	renderer = SDL_CreateRenderer (win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-	if (renderer == NULL){
-		printf ("SDL_CreateRenderer Error: %s\n", SDL_GetError ());
-		SDL_DestroyWindow (win);
-		SDL_Quit ();
-		return 1;
+	glViewport (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+	glMatrixMode (GL_PROJECTION);
+	glOrtho (0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, -1, 1);
+
+	/* Load tiles and add ALPHA channel */
+	SDL_Surface *tiles = SDL_LoadBMP ("..\\tiles.bmp");
+	if (!tiles) {
+		printf ("SDL_LoadBMP Error: %s\n", SDL_GetError ());
 	}
+	GLuint tiles_tex;
+	GLubyte *raw = (GLubyte *)malloc (tiles->w * tiles->h * 4);
+	for (int y = 0; y < tiles->h; y++) {
+		GLubyte *srcrow = (GLubyte*)tiles->pixels + y * tiles->pitch;
+		GLubyte *dstrow = raw + y * tiles->w * 4;
+		for (int x = 0; x < tiles->w; x++) {
+			GLubyte *srcpixel = srcrow + x * 3;
+			GLubyte *dstpixel = dstrow + x * 4;
+			dstpixel[0] = srcpixel[2];
+			dstpixel[1] = srcpixel[1];
+			dstpixel[2] = srcpixel[0];
+			dstpixel[3] = srcpixel[0] == 0xFF && srcpixel[1] == 0xFF && srcpixel[2] == 0xFF ? 0 : 0xFF;
+		}
+	}
+	glGenTextures (1, &tiles_tex);
+	glBindTexture (GL_TEXTURE_2D, tiles_tex);
+	glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, tiles->w, tiles->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, raw);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	tiles_width = tiles->w;
+	tiles_height = tiles->h;
+	SDL_FreeSurface (tiles);
+	free (raw);
 
-	SDL_Surface *tiles_surface = SDL_LoadBMP ("..\\tiles.bmp");
-	tiles = SDL_CreateTextureFromSurface (renderer, tiles_surface);
-	SDL_FreeSurface (tiles_surface);
+	glEnable (GL_TEXTURE_2D);
+	glEnable (GL_BLEND);
+	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	ghostplane = SDL_CreateTexture (renderer, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+	GLuint ghostplane_tex, ghostplane_fbo;
+	glGenFramebuffers (1, &ghostplane_fbo);
+	glBindFramebuffer (GL_FRAMEBUFFER, ghostplane_fbo);
+	glGenTextures (1, &ghostplane_tex);
+	glBindTexture (GL_TEXTURE_2D, ghostplane_tex);
+	glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ghostplane_tex, 0);
+	result = glCheckFramebufferStatus (GL_FRAMEBUFFER);
+	if (result != GL_FRAMEBUFFER_COMPLETE) {
+		printf ("FBO incomplete\n");
+	}
 
 	static const char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
 		"####################",
@@ -549,36 +583,36 @@ int main (int argc, char *argv[]) {
 		}
 
 		// Render solid world
-		SDL_SetRenderTarget (renderer, NULL);
+		glBindTexture (GL_TEXTURE_2D, tiles_tex);
+		glBindFramebuffer (GL_FRAMEBUFFER, 0);
+		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glClear (GL_COLOR_BUFFER_BIT);
 		current_state.render_background (2.f);
 		current_state.render_cass (2.f);
 
 		if (current_state.show_ghosts) {
 			// Render ghosts on ghostplane
-			SDL_SetRenderTarget (renderer, ghostplane);
-			SDL_SetRenderDrawColor (renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-			SDL_RenderClear (renderer);
-			memset (&current_state.map.updates, 0, sizeof (current_state.map.updates));
+			glBindTexture (GL_TEXTURE_2D, tiles_tex);
+			glBindFramebuffer (GL_FRAMEBUFFER, ghostplane_fbo);
+			glBlendFunc (GL_SRC_ALPHA, GL_ONE);
+			glClear (GL_COLOR_BUFFER_BIT);
 			recurse (&current_state, 1.f, 0);
 
 			// Render ghostplane
-			SDL_SetRenderTarget (renderer, NULL);
-			SDL_SetTextureBlendMode (ghostplane, SDL_BLENDMODE_BLEND);
-			SDL_SetTextureAlphaMod (ghostplane, 128);
-			for (int x = 0; x < MAP_WIDTH; x++) {
-				for (int y = 0; y < MAP_HEIGHT; y++) {
-					if (current_state.map.updates[x][y]) {
-						SDL_Rect rect = { x * CELL_WIDTH, y * CELL_HEIGHT, CELL_WIDTH, CELL_HEIGHT };
-						SDL_RenderCopy (renderer, ghostplane, &rect, &rect);
-					}
-				}
-			}
+			glBindFramebuffer (GL_FRAMEBUFFER, 0);
+			glBlendFunc (GL_ONE, GL_ONE);
+			glBindTexture (GL_TEXTURE_2D, ghostplane_tex);
+			glColor3f (1.f, 1.f, 1.f);
+			glBegin (GL_TRIANGLE_STRIP);
+			glTexCoord2f (0.f, 1.f); glVertex2i (0, 0);
+			glTexCoord2f (1.f, 1.f); glVertex2i (SCREEN_WIDTH, 0);
+			glTexCoord2f (0.f, 0.f); glVertex2i (0, SCREEN_HEIGHT);
+			glTexCoord2f (1.f, 0.f); glVertex2i (SCREEN_WIDTH, SCREEN_HEIGHT);
+			glEnd ();
 		}
-		SDL_RenderPresent (renderer);
-	}
 
-	SDL_DestroyTexture (ghostplane);
-	SDL_DestroyTexture (tiles);
+		SDL_GL_SwapWindow (win);
+	}
 
 	SDL_GL_DeleteContext (gl_context);
 	return 0;
