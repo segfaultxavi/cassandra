@@ -502,7 +502,7 @@ int main (int argc, char *argv[]) {
 		return 1;
 	}
 
-	SDL_Surface *tiles_surface = SDL_LoadBMP ("..\\32x32_template_crop.bmp");
+	SDL_Surface *tiles_surface = SDL_LoadBMP ("..\\tiles.bmp");
 	tiles = SDL_CreateTextureFromSurface (renderer, tiles_surface);
 	SDL_FreeSurface (tiles_surface);
 
