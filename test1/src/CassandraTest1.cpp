@@ -534,7 +534,7 @@ int main (int argc, char *argv[]) {
 	glBindFramebuffer (GL_FRAMEBUFFER, ghostplane_fbo);
 	glGenTextures (1, &ghostplane_tex);
 	glBindTexture (GL_TEXTURE_2D, ghostplane_tex);
-	glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA16F, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ghostplane_tex, 0);
@@ -582,6 +582,8 @@ int main (int argc, char *argv[]) {
 	if (status != 1 || logsize != 0) {
 		printf ("Program failed (link status %d):\n%s", status, log);
 	}
+	GLint tex_uniform = glGetUniformLocation (ghostplane_program, "tex");
+	glProgramUniform1i (ghostplane_program, tex_uniform, 0);
 
 	static const char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
 		"####################",
@@ -636,7 +638,7 @@ int main (int argc, char *argv[]) {
 			// Render ghosts on ghostplane
 			glBindTexture (GL_TEXTURE_2D, tiles_tex);
 			glBindFramebuffer (GL_FRAMEBUFFER, ghostplane_fbo);
-			glBlendFunc (GL_SRC_ALPHA_SATURATE, GL_ONE);
+			glBlendFunc (GL_SRC_ALPHA, GL_ONE);
 			glClear (GL_COLOR_BUFFER_BIT);
 			recurse (&current_state, 1.f, 0);
 
@@ -644,8 +646,6 @@ int main (int argc, char *argv[]) {
 			glBindFramebuffer (GL_FRAMEBUFFER, 0);
 			glBlendFunc (GL_ONE, GL_ONE);
 			glBindTexture (GL_TEXTURE_2D, ghostplane_tex);
-			GLint tex = glGetUniformLocation (ghostplane_program, "tex");
-			glProgramUniform1i (ghostplane_program, tex, 0);
 			glUseProgram (ghostplane_program);
 			glColor3f (1.f, 1.f, 1.f);
 			glBegin (GL_TRIANGLE_STRIP);
