@@ -1,2 +1,18 @@
-TODO
+Cassandra test 1 (Matrix-based, time controlled by player)
+* Pit
+* PUshable block
+* Triggers & doors
+* Transparent ghostplane
+- Render blocks only when in LOS (or render darker)
+- Wolf
+* Roguelike tiles
+- Allow backtracking to reduce probability of paths that lead to death or merge with higher-probability paths.
+- Cumulative analysis: recursion depth increases frame after frame, if player has not moved -> standing still refines view
+
+Cassanda test 2 (Matrix-based, time independent of player)
+- Timed blocks
+
+Cassandra test 3 (Matrix map, free-running player and objects)
+- Mobs (intelligent, rolling balls)
+- Free-running Cass
 
