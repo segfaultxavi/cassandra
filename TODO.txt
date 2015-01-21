@@ -1,6 +1,6 @@
 Cassandra test 1 (Matrix-based, time controlled by player)
 * Pit
-* PUshable block
+* Pushable block
 * Triggers & doors
 * Transparent ghostplane
 - Render blocks only when in LOS (or render darker)
