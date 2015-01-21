@@ -23,6 +23,7 @@
 extern unsigned char tiles_data[];
 int tiles_width, tiles_height;
 
+struct Action;
 struct Cell;
 struct DoorCell;
 struct PushableBlockCell;
@@ -69,65 +70,6 @@ struct Cass : Renderable {
 	}
 };
 
-struct Undo {
-	Undo *next;
-
-	Undo () : next (NULL) {}
-
-	virtual ~Undo () {
-		if (next) {
-			delete next;
-		}
-	}
-
-	virtual void apply (State *state) = 0;
-
-	void add (Undo *new_undo) {
-		Undo *last = this, *next = last->next;
-		while (next) {
-			last = next;
-			next = next->next;
-		}
-		last->next = new_undo;
-	}
-};
-
-struct CassUndo : Undo {
-	int cass_x, cass_y;
-	int cass_dir;
-	bool dead;
-
-	CassUndo (int cass_x, int cass_y, int cass_dir, bool dead) {
-		this->cass_x = cass_x;
-		this->cass_y = cass_y;
-		this->cass_dir = cass_dir;
-		this->dead = dead;
-	}
-
-	void apply (State *state);
-};
-
-struct PushUndo : Undo {
-	int old_x, old_y;
-	PushableBlockCell *pushable;
-
-	PushUndo (int old_x, int old_y, PushableBlockCell *pushable) {
-		this->old_x = old_x;
-		this->old_y = old_y;
-		this->pushable = pushable;
-	}
-
-	void apply (State *state);
-};
-
-struct DoorToggleUndo : Undo {
-	DoorCell *door;
-
-	DoorToggleUndo (DoorCell *door) : door (door) {}
-
-	void apply (State *state);
-};
-
 struct Map {
 	Cell *cells[MAP_WIDTH][MAP_HEIGHT];
 };
@@ -149,7 +91,7 @@ struct Cell : Renderable {
 	};
 
 	virtual bool can_pass (int incoming_dir) = 0;
-	virtual void pass (Cass *cass, Undo **undo = NULL) {};
+	virtual Action *pass (int incoming_dir) { return NULL; };
 	virtual bool is_hole () { return false; }
 };
 
@@ -169,9 +111,7 @@ struct TrapCell : Cell {
 	TrapCell (Map *map, int x, int y) : Cell (map, x, y, 2, 6, true) {}
 
 	virtual bool can_pass (int incoming_dir) { return true; }
-	virtual void pass (Cass *cass, Undo **undo = NULL) {
-		cass->dead = true;
-	}
+	virtual Action *pass (int incoming_dir);
 
 	virtual bool is_hole () { return true; }
 };
@@ -194,35 +134,7 @@ struct PushableBlockCell : Cell {
 		return (map->cells[newx][newy]->can_pass (incoming_dir));
 	}
 
-	virtual void pass (Cass *cass, Undo **undo = NULL) {
-		int oldx = x;
-		int oldy = y;
-		int newx = x + dirs[cass->dir][0];
-		int newy = y + dirs[cass->dir][1];
-
-		/* FIXME: A PushableBlock should not go _over_ another block */
-		map->cells[oldx][oldy] = block_below;
-		block_below = map->cells[newx][newy];
-		map->cells[newx][newy] = this;
-		x = newx;
-		y = newy;
-
-		if (undo) {
-			*undo = new PushUndo (oldx, oldy, this);
-		}
-		Undo *subundo = NULL;
-		map->cells[oldx][oldy]->pass (cass, undo ? &subundo : NULL);
-		if (subundo) {
-			(*undo)->add (subundo);
-		}
-
-		if (block_below->is_hole ()) {
-			map->cells[newx][newy] = new EmptyCell (map, newx, newy);
-			if (!undo) {
-				delete this; /* And block_below */
-			}
-		}
-	}
+	virtual Action *pass (int incoming_dir);
 };
 
 struct DoorCell : Cell {
@@ -254,59 +166,213 @@ struct TriggerCell : Cell {
 	TriggerCell (Map *map, int x, int y, DoorCell *door, int id) : Cell (map, x, y, 2, 2, true), door (door), id (id) {}
 
 	virtual bool can_pass (int incoming_dir) { return true; }
+	virtual Action *pass (int incoming_dir);
+};
 
-	virtual void pass (Cass *cass, Undo **undo = NULL) {
-		if (undo) {
-			*undo = new DoorToggleUndo (door);
+struct State {
+	Cass cass;
+	Map map;
+
+	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]);
+	~State ();
+
+	void render_background (float alpha) {
+		for (int x = 0; x < MAP_WIDTH; x++) {
+			for (int y = 0; y < MAP_HEIGHT; y++) {
+				map.cells[x][y]->render (alpha);
+			}
 		}
+	}
+
+	void render_cass (float alpha) {
+		cass.render (alpha);
+	}
+};
+
+struct Action {
+	Action *next;
+
+	Action () : next (NULL) {}
+
+	virtual ~Action () {
+		if (next) {
+			delete next;
+		}
+	}
+
+	virtual void apply (State *state) = 0;
+	virtual void undo (State *state) = 0;
+
+	void add (Action *new_action) {
+		if (!next)
+			next = new_action;
+		else
+			next->add (new_action);
+	}
+};
+
+struct CassAction : Action {
+	int inc_x, inc_y;
+	bool toggle_dead;
+
+	CassAction (int inc_x, int inc_y, bool toggle_dead) {
+		this->inc_x = inc_x;
+		this->inc_y = inc_y;
+		this->toggle_dead = toggle_dead;
+	}
+
+	void apply (State *state) {
+		state->cass.x += inc_x;
+		state->cass.y += inc_y;
+		state->cass.dead ^= toggle_dead;
+		if (next)
+			next->apply (state);
+	}
+
+	void undo (State *state) {
+		if (next)
+			next->undo (state);
+		state->cass.x -= inc_x;
+		state->cass.y -= inc_y;
+		state->cass.dead ^= toggle_dead;
+	}
+};
+
+struct PushAction : Action {
+	int inc_x, inc_y;
+	PushableBlockCell *pushable;
+	bool killed;
+
+	PushAction (int inc_x, int inc_y, PushableBlockCell *pushable) {
+		this->inc_x = inc_x;
+		this->inc_y = inc_y;
+		this->pushable = pushable;
+		this->killed = false;
+	}
+
+	~PushAction () {
+		if (killed)
+			delete pushable;
+	}
+
+	void move (State *state, int new_x, int new_y) {
+		int old_x = pushable->x;
+		int old_y = pushable->y;
+
+		if (pushable->block_below->is_hole ()) {
+			// Resurrecting the pushable
+			delete state->map.cells[old_x][old_y];
+			killed = false;
+		}
+
+		Cell *new_below = state->map.cells[new_x][new_y];
+		state->map.cells[new_x][new_y] = pushable;
+		state->map.cells[old_x][old_y] = pushable->block_below;
+		pushable->block_below = new_below;
+		pushable->x = new_x;
+		pushable->y = new_y;
+
+		if (pushable->block_below->is_hole ()) {
+			// The pushable block disappears from the map, but remains in the Action
+			state->map.cells[new_x][new_y] = new EmptyCell (&state->map, new_x, new_y);
+			killed = true;
+		}
+	}
+
+	void apply (State *state) {
+		/* FIXME: A PushableBlock should not go _over_ another block */
+		move (state, pushable->x + inc_x, pushable->y + inc_y);
+		if (next)
+			next->apply (state);
+	}
+
+	void undo (State *state) {
+		if (next)
+			next->undo (state);
+		move (state, pushable->x - inc_x, pushable->y - inc_y);
+	}
+};
+
+struct DoorToggleAction : Action {
+	DoorCell *door;
+
+	DoorToggleAction (DoorCell *door) : door (door) {}
+
+	void apply (State *state) {
+		door->toggle ();
+		if (next)
+			next->apply (state);
+	}
+
+	void undo (State *state) {
+		if (next)
+			next->undo (state);
 		door->toggle ();
 	}
 };
 
-struct State {
-	bool finished;
-	int max_depth;
-	bool show_ghosts;
-	Cass cass;
-	Map map;
+Action *TrapCell::pass (int incoming_dir) {
+	return new CassAction (0, 0, true);
+}
 
-	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]): finished (false), show_ghosts (false), max_depth (3) {
-		int x, y;
-		for (x = 0; x < MAP_WIDTH; x++) {
-			for (y = 0; y < MAP_HEIGHT; y++) {
-				switch (text_map[y][x]) {
-				case '#': map.cells[x][y] = new WallCell (&map, x, y); break;
-				case '@': cass.x = x; cass.y = y; // Deliverate fallthrough
-				case '.': map.cells[x][y] = new EmptyCell (&map, x, y); break;
-				case '^': map.cells[x][y] = new TrapCell (&map, x, y); break;
-				case '%': map.cells[x][y] = new PushableBlockCell (&map, x, y); break;
-				}
-				if (text_map[y][x] >= 'a' && text_map[y][x] <= 'z') {
-					int id = text_map[y][x] - 'a';
-					for (int sx = 0; sx < MAP_WIDTH; sx++) {
-						for (int sy = 0; sy < MAP_HEIGHT; sy++) {
-							if (text_map[sy][sx] == 'A' + id) {
-								DoorCell *door = new DoorCell (&map, sx, sy, id);
-								map.cells[sx][sy] = door;
-								map.cells[x][y] = new TriggerCell (&map, x, y, door, id);
-							}
+Action *PushableBlockCell::pass (int incoming_dir) {
+	Action *action;
+
+	action = new PushAction (dirs[incoming_dir][0], dirs[incoming_dir][1], this);
+	action->add (block_below->pass (incoming_dir));
+
+	return action;
+}
+
+Action *TriggerCell::pass (int incoming_dir) {
+	return new DoorToggleAction (door);
+}
+
+State::State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) {
+	int x, y;
+	for (x = 0; x < MAP_WIDTH; x++) {
+		for (y = 0; y < MAP_HEIGHT; y++) {
+			switch (text_map[y][x]) {
+			case '#': map.cells[x][y] = new WallCell (&map, x, y); break;
+			case '@': cass.x = x; cass.y = y; // Deliverate fallthrough
+			case '.': map.cells[x][y] = new EmptyCell (&map, x, y); break;
+			case '^': map.cells[x][y] = new TrapCell (&map, x, y); break;
+			case '%': map.cells[x][y] = new PushableBlockCell (&map, x, y); break;
+			}
+			if (text_map[y][x] >= 'a' && text_map[y][x] <= 'z') {
+				int id = text_map[y][x] - 'a';
+				for (int sx = 0; sx < MAP_WIDTH; sx++) {
+					for (int sy = 0; sy < MAP_HEIGHT; sy++) {
+						if (text_map[sy][sx] == 'A' + id) {
+							DoorCell *door = new DoorCell (&map, sx, sy, id);
+							map.cells[sx][sy] = door;
+							map.cells[x][y] = new TriggerCell (&map, x, y, door, id);
 						}
 					}
 				}
 			}
 		}
-		cass.dir = 0;
-		cass.dead = false;
 	}
+	cass.dir = 0;
+	cass.dead = false;
+}
 
-	~State () {
-		int x, y;
-		for (x = 0; x < MAP_WIDTH; x++) {
-			for (y = 0; y < MAP_HEIGHT; y++) {
-				delete map.cells[x][y];
-			}
+State::~State () {
+	int x, y;
+	for (x = 0; x < MAP_WIDTH; x++) {
+		for (y = 0; y < MAP_HEIGHT; y++) {
+			delete map.cells[x][y];
 		}
 	}
+}
+
+struct Game {
+	bool finished;
+	int max_depth;
+	bool show_ghosts;
+	State state;
+
+	Game (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) : finished (false), show_ghosts (false), max_depth (3), state (text_map) {}
 
 	bool can_input (SDL_Keycode keycode) {
 		int dir = -1;
@@ -329,14 +395,17 @@ struct State {
 			dir = 3;
 			break;
 		}
-		if (!cass.dead && dir > -1) {
-			if (map.cells[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass (dir)) return true;
+		if (!state.cass.dead && dir > -1) {
+			int new_x = state.cass.x + dirs[dir][0];
+			int new_y = state.cass.y + dirs[dir][1];
+			if (state.map.cells[new_x][new_y]->can_pass (dir)) return true;
 		}
 		return false;
 	}
 
-	void input (SDL_Keycode keycode, Undo **undo = NULL) {
+	Action *input (SDL_Keycode keycode) {
 		int dir = -1;
+		Action *action = NULL;
 		switch (keycode) {
 		case SDLK_ESCAPE:
 			finished = true;
@@ -363,79 +432,32 @@ struct State {
 			dir = 3;
 			break;
 		}
-		if (!cass.dead && dir > -1) {
-			if (map.cells[cass.x + dirs[dir][0]][cass.y + dirs[dir][1]]->can_pass (dir)) {
-				Undo *subundo = NULL;
-				if (undo)
-					*undo = new CassUndo (cass.x, cass.y, cass.dir, false);
-				cass.x += dirs[dir][0];
-				cass.y += dirs[dir][1];
-				cass.dir = dir;
-
-				map.cells[cass.x][cass.y]->pass (&cass, undo ? &subundo : NULL);
-				if (subundo) {
-					(*undo)->add (subundo);
-				}
+		if (!state.cass.dead && dir > -1) {
+			int new_x = state.cass.x + dirs[dir][0];
+			int new_y = state.cass.y + dirs[dir][1];
+			if (state.map.cells[new_x][new_y]->can_pass (dir)) {
+				action = new CassAction (dirs[dir][0], dirs[dir][1], false);
+				action->add (state.map.cells[new_x][new_y]->pass (dir));
 			}
 		}
-	}
 
-	void render_background (float alpha) {
-		for (int x = 0; x < MAP_WIDTH; x++) {
-			for (int y = 0; y < MAP_HEIGHT; y++) {
-				map.cells[x][y]->render (alpha);
-			}
-		}
-	}
-
-	void render_cass (float alpha) {
-		cass.render (alpha);
+		return action;
 	}
 };
 
-void CassUndo::apply (State *state) {
-	if (next)
-		next->apply (state);
-	state->cass.x = cass_x;
-	state->cass.y = cass_y;
-	state->cass.dir = cass_dir;
-	state->cass.dead = dead;
-}
-
-void PushUndo::apply (State *state) {
-	if (next)
-		next->apply (state);
-	int new_x = pushable->x;
-	int new_y = pushable->y;
-	if (pushable->block_below->is_hole ()) {
-		delete state->map.cells[new_x][new_y];
-	}
-	state->map.cells[new_x][new_y] = pushable->block_below;
-	pushable->block_below = state->map.cells[old_x][old_y];
-	state->map.cells[old_x][old_y] = pushable;
-	pushable->x = old_x;
-	pushable->y = old_y;
-}
-
-void DoorToggleUndo::apply (State *state) {
-	if (next)
-		next->apply (state);
-	door->toggle ();
-}
-
-void recurse (State *state, float alpha, int depth) {
+void recurse (Game *game, float alpha, int depth) {
 	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT };
 	static const int weights[4] = { 3, 2, 1, 2 };
 	int probs[4], i;
 	float total_prob = 0.f;
 
-	if (depth >= state->max_depth) return;
+	if (depth >= game->max_depth) return;
 
 	if (alpha < 0.001f) return;
 
 	for (i = 0; i < 4; i++) {
-		if (state->can_input (actions[i])) {
-			probs[i] = weights[(i + 4 - state->cass.dir) % 4];
+		if (game->can_input (actions[i])) {
+			probs[i] = weights[(i + 4 - game->state.cass.dir) % 4];
 		} else {
 			probs[i] = 0;
 		}
@@ -444,14 +466,17 @@ void recurse (State *state, float alpha, int depth) {
 
 	for (i = 0; i < 4; i++) {
 		if (probs[i] > 0) {
-			Undo *undo;
+			Action *action;
 			float p = alpha * probs[i] / total_prob;
-			state->input (actions[i], &undo);
-			state->render_background (p);
-			state->render_cass (p);
-			recurse (state, p, depth + 1);
-			undo->apply (state);
-			delete undo;
+			action = game->input (actions[i]);
+			if (action) {
+				action->apply (&game->state);
+				game->state.render_background (p);
+				game->state.render_cass (p);
+				recurse (game, p, depth + 1);
+				action->undo (&game->state);
+			}
+			delete action;
 		}
 	}
 }
@@ -607,10 +632,11 @@ int main (int argc, char *argv[]) {
 		"#.^........#...%...#",
 		"####################",
 	};
-	State current_state (textMap);
+	Game game (textMap);
 
 	SDL_Event e;
 	bool quit = false;
+	Action *action;
 	while (!quit) {
 		if (SDL_WaitEvent (&e)) {
 			switch (e.type) {
@@ -618,8 +644,12 @@ int main (int argc, char *argv[]) {
 				quit = true;
 				break;
 			case SDL_KEYDOWN:
-				current_state.input (e.key.keysym.sym);
-				if (current_state.finished)
+				action = game.input (e.key.keysym.sym);
+				if (action) {
+					action->apply (&game.state);
+					delete action;
+				}
+				if (game.finished)
 					quit = true;
 				break;
 			}
@@ -631,16 +661,16 @@ int main (int argc, char *argv[]) {
 		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glUseProgram (0);
 		glClear (GL_COLOR_BUFFER_BIT);
-		current_state.render_background (2.f);
-		current_state.render_cass (2.f);
+		game.state.render_background (2.f);
+		game.state.render_cass (2.f);
 
-		if (current_state.show_ghosts) {
+		if (game.show_ghosts) {
 			// Render ghosts on ghostplane
 			glBindTexture (GL_TEXTURE_2D, tiles_tex);
 			glBindFramebuffer (GL_FRAMEBUFFER, ghostplane_fbo);
 			glBlendFunc (GL_SRC_ALPHA, GL_ONE);
 			glClear (GL_COLOR_BUFFER_BIT);
-			recurse (&current_state, 1.f, 0);
+			recurse (&game, 1.f, 0);
 
 			// Render ghostplane
 			glBindFramebuffer (GL_FRAMEBUFFER, 0);
