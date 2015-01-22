@@ -1,4 +1,4 @@
-Cassandra test 1 (Matrix-based, time controlled by player)
+Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
 * Pit
 * Pushable block
 * Triggers & doors
@@ -6,13 +6,23 @@ Cassandra test 1 (Matrix-based, time controlled by player)
 - Render blocks only when in LOS (or render darker)
 - Wolf
 * Roguelike tiles
-- Allow backtracking to reduce probability of paths that lead to death or merge with higher-probability paths.
-- Cumulative analysis: recursion depth increases frame after frame, if player has not moved -> standing still refines view
+- State machine approach, with nodes as game states and transitions as user actions.
+- Build state diagram progressively. Keep a list of nodes with unexplored transitions.
+- Merge nodes when equal. Equality function. Use a hash table indexed by Cass position.
+  Every entry in the hash is a list of nodes (game states) which have Cass in that position.
+- Keeping as whole copy of game state in each node can be expensive. Keep only the Actions in the transitions and build
+  the game state as the exploration progresses.
+- When two states are equal except for the number of steps taken, the worst is replaced by the best (= Dijkstra).
+  How does exploration continue?
+- Rendering: Nodes that lead somewhere are white, otherwise (no action leads to a node with fewer steps), black.
+  If they lead to the goal, yellow.
+- When Cass moves: A node becomes the current one, and that prediction is still valid. Other nodes will need to be recalculated.
 
-Cassanda test 2 (Matrix-based, time independent of player)
+Cassanda test 2: Discrete in time and space, position is matrix-based, time is independent of player
 - Timed blocks
+- Wolf advances on its own.
 
-Cassandra test 3 (Matrix map, free-running player and objects)
+Cassandra test 3: Continuous in time and space, matrix map but free-running player and objects (positions not limited to matrix)
 - Mobs (intelligent, rolling balls)
 - Free-running Cass
 
