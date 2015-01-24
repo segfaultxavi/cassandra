@@ -1,11 +1,5 @@
 Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
-* Pit
-* Pushable block
-* Triggers & doors
-* Transparent ghostplane
-- Render blocks only when in LOS (or render darker)
-- Wolf
-* Roguelike tiles
+- Read maps, of arbitrary size, from text file.
 - State machine approach, with nodes as game states and transitions as user actions.
 - Build state diagram progressively. Keep a list of nodes with unexplored transitions.
 - Merge nodes when equal. Equality function. Use a hash table indexed by Cass position.
@@ -17,6 +11,9 @@ Cassandra test 1: Discrete in time and space, position is matrix-based, time is 
 - Rendering: Nodes that lead somewhere are white, otherwise (no action leads to a node with fewer steps), black.
   If they lead to the goal, yellow.
 - When Cass moves: A node becomes the current one, and that prediction is still valid. Other nodes will need to be recalculated.
+- Render blocks only when in LOS (or render darker)
+- Wolf: Moves and goes for Cass if it sees her
+- Archer: Kills Cass if it sees her
 
 Cassanda test 2: Discrete in time and space, position is matrix-based, time is independent of player
 - Timed blocks
