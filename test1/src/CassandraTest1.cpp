@@ -25,7 +25,11 @@ int tiles_width, tiles_height;
 
 struct Action;
 struct Cell;
+struct EmptyCell;
+struct WallCell;
+struct TrapCell;
 struct DoorCell;
+struct TriggerCell;
 struct PushableBlockCell;
 struct State;
 
@@ -100,11 +104,20 @@ struct Cell : Renderable {
 	virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
 	virtual Action *pass (Map *map, int incoming_dir) { return NULL; };
 	virtual bool is_hole () const { return false; }
+
+	virtual bool is_same (const Cell *cell) const = 0;
+	virtual bool is_same (const EmptyCell *cell) const { return false; }
+	virtual bool is_same (const WallCell *cell) const { return false; }
+	virtual bool is_same (const TrapCell *cell) const { return false; }
+	virtual bool is_same (const PushableBlockCell *cell) const { return false; }
+	virtual bool is_same (const DoorCell *cell) const { return false; }
+	virtual bool is_same (const TriggerCell *cell) const { return false; }
 };
 
 struct EmptyCell : Cell {
 	EmptyCell (int x, int y) : Cell (x, y, 2, 6, true) {}
 	Cell *clone () const { return new EmptyCell (*this); }
+	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 };
@@ -112,6 +125,7 @@ struct EmptyCell : Cell {
 struct WallCell : Cell {
 	WallCell (int x, int y) : Cell (x, y, 0, 5, true) {}
 	Cell *clone () const { return new WallCell (*this); }
+	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return false; }
 };
@@ -119,6 +133,7 @@ struct WallCell : Cell {
 struct TrapCell : Cell {
 	TrapCell (int x, int y) : Cell (x, y, 2, 6, true) {}
 	Cell *clone () const { return new TrapCell (*this); }
+	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -144,6 +159,8 @@ struct PushableBlockCell : Cell {
 		return new_pushable;
 	}
 
+	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+
 	virtual bool can_pass (const Map *map, int incoming_dir) const {
 		int newx = x + dirs[incoming_dir][0];
 		int newy = y + dirs[incoming_dir][1];
@@ -158,6 +175,7 @@ struct DoorCell : Cell {
 
 	DoorCell (int x, int y, bool open) : Cell (x, y, 3, 5, false), open (open) {}
 	Cell *clone () const { return new DoorCell (*this); }
+	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
 
 	virtual void render (float alpha) {
 		if (open) {
@@ -180,6 +198,7 @@ struct TriggerCell : Cell {
 
 	TriggerCell (int x, int y, int door_x, int door_y) : Cell (x, y, 2, 2, true), door_x (door_x), door_y (door_y) {}
 	Cell *clone () const { return new TriggerCell (*this); }
+	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -218,7 +237,8 @@ struct State {
 	bool can_input (SDL_Keycode keycode);
 	Action *input (SDL_Keycode keycode);
 
-	bool is_better (State *other) const;
+	bool is_same (const State *other) const;
+	bool is_better (const State *other) const;
 };
 
 struct Action {
@@ -451,6 +471,23 @@ Action *State::input (SDL_Keycode keycode) {
 	}
 
 	return action;
+}
+
+bool State::is_same (const State *other) const {
+	int x, y;
+	for (x = 0; x < MAP_WIDTH; x++) {
+		for (y = 0; y < MAP_HEIGHT; y++) {
+			const Cell *cell = map.get_cell (x, y);
+			const Cell *other_cell = other->map.get_cell (x, y);
+			if (!cell->is_same (other_cell)) return false;
+		}
+	}
+
+	return true;
+}
+
+bool State::is_better (const State *other) const {
+	return cass.steps < other->cass.steps;
 }
 
 struct Game {
