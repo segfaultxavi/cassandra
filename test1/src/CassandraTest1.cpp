@@ -72,6 +72,11 @@ struct Cass : Renderable {
 };
 
 struct Map {
+	Cell *get_cell (int x, int y) { return cells[x][y]; }
+	const Cell *get_cell (int x, int y) const { return cells[x][y]; }
+	void set_cell (int x, int y, Cell *c) { cells[x][y] = c; }
+
+private:
 	Cell *cells[MAP_WIDTH][MAP_HEIGHT];
 };
 
@@ -84,7 +89,7 @@ struct Cell : Renderable {
 
 	virtual ~Cell () {}
 
-	virtual Cell *clone () = 0;
+	virtual Cell *clone () const = 0;
 
 	virtual void render (float alpha) {
 		if (inmutable && alpha <= 1.0)
@@ -92,33 +97,33 @@ struct Cell : Renderable {
 		Renderable::render (x, y, alpha);
 	};
 
-	virtual bool can_pass (const Map *map, int incoming_dir) = 0;
+	virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
 	virtual Action *pass (Map *map, int incoming_dir) { return NULL; };
-	virtual bool is_hole () { return false; }
+	virtual bool is_hole () const { return false; }
 };
 
 struct EmptyCell : Cell {
 	EmptyCell (int x, int y) : Cell (x, y, 2, 6, true) {}
-	Cell *clone () { return new EmptyCell (*this); }
+	Cell *clone () const { return new EmptyCell (*this); }
 
-	virtual bool can_pass (const Map *map, int incoming_dir) { return true; }
+	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 };
 
 struct WallCell : Cell {
 	WallCell (int x, int y) : Cell (x, y, 0, 5, true) {}
-	Cell *clone () { return new WallCell (*this); }
+	Cell *clone () const { return new WallCell (*this); }
 
-	virtual bool can_pass (const Map *map, int incoming_dir) { return false; }
+	virtual bool can_pass (const Map *map, int incoming_dir) const { return false; }
 };
 
 struct TrapCell : Cell {
 	TrapCell (int x, int y) : Cell (x, y, 2, 6, true) {}
-	Cell *clone () { return new TrapCell (*this); }
+	Cell *clone () const { return new TrapCell (*this); }
 
-	virtual bool can_pass (const Map *map, int incoming_dir) { return true; }
+	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
 
-	virtual bool is_hole () { return true; }
+	virtual bool is_hole () const { return true; }
 };
 
 struct PushableBlockCell : Cell {
@@ -133,16 +138,16 @@ struct PushableBlockCell : Cell {
 			delete block_below;
 	}
 
-	Cell *clone () {
+	Cell *clone () const {
 		PushableBlockCell *new_pushable = new PushableBlockCell (*this);
 		new_pushable->block_below = block_below->clone ();
 		return new_pushable;
 	}
 
-	virtual bool can_pass (const Map *map, int incoming_dir) {
+	virtual bool can_pass (const Map *map, int incoming_dir) const {
 		int newx = x + dirs[incoming_dir][0];
 		int newy = y + dirs[incoming_dir][1];
-		return (map->cells[newx][newy]->can_pass (map, incoming_dir));
+		return (map->get_cell (newx, newy)->can_pass (map, incoming_dir));
 	}
 
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -152,7 +157,7 @@ struct DoorCell : Cell {
 	bool open;
 
 	DoorCell (int x, int y, bool open) : Cell (x, y, 3, 5, false), open (open) {}
-	Cell *clone () { return new DoorCell (*this); }
+	Cell *clone () const { return new DoorCell (*this); }
 
 	virtual void render (float alpha) {
 		if (open) {
@@ -163,7 +168,7 @@ struct DoorCell : Cell {
 		Cell::render (alpha);
 	};
 
-	virtual bool can_pass (const Map *map, int incoming_dir) { return open; }
+	virtual bool can_pass (const Map *map, int incoming_dir) const { return open; }
 
 	void toggle () {
 		open = !open;
@@ -174,9 +179,9 @@ struct TriggerCell : Cell {
 	int door_x, door_y;
 
 	TriggerCell (int x, int y, int door_x, int door_y) : Cell (x, y, 2, 2, true), door_x (door_x), door_y (door_y) {}
-	Cell *clone () { return new TriggerCell (*this); }
+	Cell *clone () const { return new TriggerCell (*this); }
 
-	virtual bool can_pass (const Map *map, int incoming_dir) { return true; }
+	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
 };
 
@@ -190,7 +195,7 @@ struct State {
 	void render_background (float alpha) {
 		for (int x = 0; x < MAP_WIDTH; x++) {
 			for (int y = 0; y < MAP_HEIGHT; y++) {
-				map.cells[x][y]->render (alpha);
+				map.get_cell (x, y)->render (alpha);
 			}
 		}
 	}
@@ -203,12 +208,17 @@ struct State {
 		State *new_state = new State (*this);
 		for (int x = 0; x < MAP_WIDTH; x++) {
 			for (int y = 0; y < MAP_HEIGHT; y++) {
-				new_state->map.cells[x][y] = map.cells[x][y]->clone ();
+				new_state->map.set_cell (x, y, map.get_cell (x, y)->clone ());
 			}
 		}
 
 		return new_state;
 	}
+
+	bool can_input (SDL_Keycode keycode);
+	Action *input (SDL_Keycode keycode);
+
+	bool is_better (State *other) const;
 };
 
 struct Action {
@@ -265,8 +275,8 @@ struct RemovePushableBlockAction : Action {
 
 	void apply (State *state) {
 		/* Delete pushable and block below */
-		delete state->map.cells[x][y];
-		state->map.cells[x][y] = new EmptyCell (x, y);
+		delete state->map.get_cell (x, y);
+		state->map.set_cell (x, y, new EmptyCell (x, y));
 		if (next)
 			next->apply (state);
 	}
@@ -275,8 +285,8 @@ struct RemovePushableBlockAction : Action {
 		if (next)
 			next->undo (state);
 		/* Delete empty cell */
-		delete state->map.cells[x][y];
-		state->map.cells[x][y] = new PushableBlockCell (x, y, new TrapCell (x, y));
+		delete state->map.get_cell (x, y);
+		state->map.set_cell (x, y, new PushableBlockCell (x, y, new TrapCell (x, y)));
 	}
 };
 
@@ -286,17 +296,17 @@ struct PushAction : Action {
 	bool remove_block;
 
 	PushAction (const Map *map, int pushable_x, int pushable_y, int inc_x, int inc_y) : pushable_x (pushable_x), pushable_y (pushable_y), inc_x (inc_x), inc_y (inc_y) {
-		if (map->cells[pushable_x + inc_x][pushable_y + inc_y]->is_hole ()) {
+		if (map->get_cell (pushable_x + inc_x, pushable_y + inc_y)->is_hole ()) {
 			add (new RemovePushableBlockAction (pushable_x + inc_x, pushable_y + inc_y));
 		}
 	}
 
 	void move (State *state, int pushable_x, int pushable_y, int new_x, int new_y) {
-		PushableBlockCell *pushable = (PushableBlockCell *)state->map.cells[pushable_x][pushable_y];
+		PushableBlockCell *pushable = (PushableBlockCell *)state->map.get_cell (pushable_x, pushable_y);
 
-		Cell *new_below = state->map.cells[new_x][new_y];
-		state->map.cells[new_x][new_y] = pushable;
-		state->map.cells[pushable_x][pushable_y] = pushable->block_below;
+		Cell *new_below = state->map.get_cell (new_x, new_y);
+		state->map.set_cell (new_x, new_y, pushable);
+		state->map.set_cell (pushable_x, pushable_y, pushable->block_below);
 		pushable->block_below = new_below;
 		pushable->x = new_x;
 		pushable->y = new_y;
@@ -322,14 +332,14 @@ struct DoorToggleAction : Action {
 	DoorToggleAction (int door_x, int door_y) : door_x (door_x), door_y (door_y) {}
 
 	void apply (State *state) {
-		DoorCell *door = (DoorCell *)state->map.cells[door_x][door_y];
+		DoorCell *door = (DoorCell *)state->map.get_cell (door_x, door_y);
 		door->toggle ();
 		if (next)
 			next->apply (state);
 	}
 
 	void undo (State *state) {
-		DoorCell *door = (DoorCell *)state->map.cells[door_x][door_y];
+		DoorCell *door = (DoorCell *)state->map.get_cell (door_x, door_y);
 		if (next)
 			next->undo (state);
 		door->toggle ();
@@ -358,11 +368,11 @@ State::State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) {
 	for (x = 0; x < MAP_WIDTH; x++) {
 		for (y = 0; y < MAP_HEIGHT; y++) {
 			switch (text_map[y][x]) {
-			case '#': map.cells[x][y] = new WallCell (x, y); break;
+			case '#': map.set_cell (x, y, new WallCell (x, y)); break;
 			case '@': cass.x = x; cass.y = y; cass.steps = 0;// Deliverate fallthrough
-			case '.': map.cells[x][y] = new EmptyCell (x, y); break;
-			case '^': map.cells[x][y] = new TrapCell (x, y); break;
-			case '%': map.cells[x][y] = new PushableBlockCell (x, y, new EmptyCell (x, y)); break;
+			case '.': map.set_cell (x, y, new EmptyCell (x, y)); break;
+			case '^': map.set_cell (x, y, new TrapCell (x, y)); break;
+			case '%': map.set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
 			}
 			if (text_map[y][x] >= 'a' && text_map[y][x] <= 'z') {
 				int id = text_map[y][x] - 'a';
@@ -370,8 +380,8 @@ State::State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) {
 					for (int sy = 0; sy < MAP_HEIGHT; sy++) {
 						if (text_map[sy][sx] == 'A' + id) {
 							DoorCell *door = new DoorCell (sx, sy, false);
-							map.cells[sx][sy] = door;
-							map.cells[x][y] = new TriggerCell (x, y, sx, sy);
+							map.set_cell (sx, sy, door);
+							map.set_cell (x, y, new TriggerCell (x, y, sx, sy));
 						}
 					}
 				}
@@ -386,9 +396,61 @@ State::~State () {
 	int x, y;
 	for (x = 0; x < MAP_WIDTH; x++) {
 		for (y = 0; y < MAP_HEIGHT; y++) {
-			delete map.cells[x][y];
+			delete map.get_cell (x, y);
 		}
 	}
+}
+bool State::can_input (SDL_Keycode keycode) {
+	int dir = -1;
+	switch (keycode) {
+	case SDLK_UP:
+		dir = 0;
+		break;
+	case SDLK_RIGHT:
+		dir = 1;
+		break;
+	case SDLK_DOWN:
+		dir = 2;
+		break;
+	case SDLK_LEFT:
+		dir = 3;
+		break;
+	}
+	if (!cass.dead && dir > -1) {
+		int new_x = cass.x + dirs[dir][0];
+		int new_y = cass.y + dirs[dir][1];
+		if (map.get_cell (new_x, new_y)->can_pass (&map, dir)) return true;
+	}
+	return false;
+}
+
+Action *State::input (SDL_Keycode keycode) {
+	int dir = -1;
+	Action *action = NULL;
+	switch (keycode) {
+	case SDLK_UP:
+		dir = 0;
+		break;
+	case SDLK_RIGHT:
+		dir = 1;
+		break;
+	case SDLK_DOWN:
+		dir = 2;
+		break;
+	case SDLK_LEFT:
+		dir = 3;
+		break;
+	}
+	if (!cass.dead && dir > -1) {
+		int new_x = cass.x + dirs[dir][0];
+		int new_y = cass.y + dirs[dir][1];
+		if (map.get_cell (new_x, new_y)->can_pass (&map, dir)) {
+			action = new CassAction (dirs[dir][0], dirs[dir][1], false);
+			action->add (map.get_cell (new_x, new_y)->pass (&map, dir));
+		}
+	}
+
+	return action;
 }
 
 struct Game {
@@ -407,25 +469,9 @@ struct Game {
 		case SDLK_KP_PLUS:
 		case SDLK_KP_MINUS:
 			return true;
-		case SDLK_UP:
-			dir = 0;
-			break;
-		case SDLK_RIGHT:
-			dir = 1;
-			break;
-		case SDLK_DOWN:
-			dir = 2;
-			break;
-		case SDLK_LEFT:
-			dir = 3;
-			break;
+		default:
+			return state.can_input (keycode);
 		}
-		if (!state.cass.dead && dir > -1) {
-			int new_x = state.cass.x + dirs[dir][0];
-			int new_y = state.cass.y + dirs[dir][1];
-			if (state.map.cells[new_x][new_y]->can_pass (&state.map, dir)) return true;
-		}
-		return false;
 	}
 
 	Action *input (SDL_Keycode keycode) {
@@ -444,26 +490,9 @@ struct Game {
 		case SDLK_KP_MINUS:
 			max_depth = max_depth > 1 ? max_depth - 1 : max_depth;
 			break;
-		case SDLK_UP:
-			dir = 0;
+		default:
+			action = state.input (keycode);
 			break;
-		case SDLK_RIGHT:
-			dir = 1;
-			break;
-		case SDLK_DOWN:
-			dir = 2;
-			break;
-		case SDLK_LEFT:
-			dir = 3;
-			break;
-		}
-		if (!state.cass.dead && dir > -1) {
-			int new_x = state.cass.x + dirs[dir][0];
-			int new_y = state.cass.y + dirs[dir][1];
-			if (state.map.cells[new_x][new_y]->can_pass (&state.map, dir)) {
-				action = new CassAction (dirs[dir][0], dirs[dir][1], false);
-				action->add (state.map.cells[new_x][new_y]->pass (&state.map, dir));
-			}
 		}
 
 		return action;
