@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 #define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
 #include <crtdbg.h>
@@ -15,13 +16,10 @@
 
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 640
-#define MAP_WIDTH 20
-#define MAP_HEIGHT 20
-#define CELL_WIDTH (SCREEN_WIDTH / MAP_WIDTH)
-#define CELL_HEIGHT (SCREEN_HEIGHT / MAP_HEIGHT)
 
 extern unsigned char tiles_data[];
 int tiles_width, tiles_height;
+int cell_width, cell_height;
 
 struct Action;
 struct Cell;
@@ -50,7 +48,7 @@ struct Renderable {
 		for (int sx = 0; sx < 2; sx++) {
 			for (int sy = 0; sy < 2; sy++) {
 				glTexCoord2f ((tilex + sx) * 32 / (GLfloat)tiles_width, (tiley + sy) * 32 / (GLfloat)tiles_height);
-				glVertex2i ((x + sx) * CELL_WIDTH, (y + sy) * CELL_HEIGHT);
+				glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
 			}
 		}
 		glEnd ();
@@ -76,12 +74,24 @@ struct Cass : Renderable {
 };
 
 struct Map {
-	Cell *get_cell (int x, int y) { return cells[x][y]; }
-	const Cell *get_cell (int x, int y) const { return cells[x][y]; }
-	void set_cell (int x, int y, Cell *c) { cells[x][y] = c; }
+	Map (int sizex, int sizey) : sizex (sizex), sizey (sizey) {
+		cell_width = SCREEN_WIDTH / sizex;
+		cell_height = SCREEN_HEIGHT / sizey;
+		cells = new Cell*[sizex * sizey];
+	}
+
+	~Map ();
+
+	int get_sizex () const { return sizex; }
+	int get_sizey () const { return sizey; }
+	Cell *get_cell (int x, int y) { return cells[x * sizey + y]; }
+	const Cell *get_cell (int x, int y) const { return cells[x * sizey + y]; }
+	void set_cell (int x, int y, Cell *c) { cells[x * sizey + y] = c; }
 
 private:
-	Cell *cells[MAP_WIDTH][MAP_HEIGHT];
+	int sizex;
+	int sizey;
+	Cell **cells;
 };
 
 struct Cell : Renderable {
@@ -206,15 +216,15 @@ struct TriggerCell : Cell {
 
 struct State {
 	Cass cass;
-	Map map;
+	Map *map;
 
-	State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]);
+	State (const char *filename);
 	~State ();
 
 	void render_background (float alpha) {
-		for (int x = 0; x < MAP_WIDTH; x++) {
-			for (int y = 0; y < MAP_HEIGHT; y++) {
-				map.get_cell (x, y)->render (alpha);
+		for (int x = 0; x < map->get_sizex (); x++) {
+			for (int y = 0; y < map->get_sizey (); y++) {
+				map->get_cell (x, y)->render (alpha);
 			}
 		}
 	}
@@ -225,9 +235,9 @@ struct State {
 
 	State *clone () {
 		State *new_state = new State (*this);
-		for (int x = 0; x < MAP_WIDTH; x++) {
-			for (int y = 0; y < MAP_HEIGHT; y++) {
-				new_state->map.set_cell (x, y, map.get_cell (x, y)->clone ());
+		for (int x = 0; x < map->get_sizex (); x++) {
+			for (int y = 0; y < map->get_sizex (); y++) {
+				new_state->map->set_cell (x, y, map->get_cell (x, y)->clone ());
 			}
 		}
 
@@ -295,8 +305,8 @@ struct RemovePushableBlockAction : Action {
 
 	void apply (State *state) {
 		/* Delete pushable and block below */
-		delete state->map.get_cell (x, y);
-		state->map.set_cell (x, y, new EmptyCell (x, y));
+		delete state->map->get_cell (x, y);
+		state->map->set_cell (x, y, new EmptyCell (x, y));
 		if (next)
 			next->apply (state);
 	}
@@ -305,8 +315,8 @@ struct RemovePushableBlockAction : Action {
 		if (next)
 			next->undo (state);
 		/* Delete empty cell */
-		delete state->map.get_cell (x, y);
-		state->map.set_cell (x, y, new PushableBlockCell (x, y, new TrapCell (x, y)));
+		delete state->map->get_cell (x, y);
+		state->map->set_cell (x, y, new PushableBlockCell (x, y, new TrapCell (x, y)));
 	}
 };
 
@@ -322,11 +332,11 @@ struct PushAction : Action {
 	}
 
 	void move (State *state, int pushable_x, int pushable_y, int new_x, int new_y) {
-		PushableBlockCell *pushable = (PushableBlockCell *)state->map.get_cell (pushable_x, pushable_y);
+		PushableBlockCell *pushable = (PushableBlockCell *)state->map->get_cell (pushable_x, pushable_y);
 
-		Cell *new_below = state->map.get_cell (new_x, new_y);
-		state->map.set_cell (new_x, new_y, pushable);
-		state->map.set_cell (pushable_x, pushable_y, pushable->block_below);
+		Cell *new_below = state->map->get_cell (new_x, new_y);
+		state->map->set_cell (new_x, new_y, pushable);
+		state->map->set_cell (pushable_x, pushable_y, pushable->block_below);
 		pushable->block_below = new_below;
 		pushable->x = new_x;
 		pushable->y = new_y;
@@ -352,14 +362,14 @@ struct DoorToggleAction : Action {
 	DoorToggleAction (int door_x, int door_y) : door_x (door_x), door_y (door_y) {}
 
 	void apply (State *state) {
-		DoorCell *door = (DoorCell *)state->map.get_cell (door_x, door_y);
+		DoorCell *door = (DoorCell *)state->map->get_cell (door_x, door_y);
 		door->toggle ();
 		if (next)
 			next->apply (state);
 	}
 
 	void undo (State *state) {
-		DoorCell *door = (DoorCell *)state->map.get_cell (door_x, door_y);
+		DoorCell *door = (DoorCell *)state->map->get_cell (door_x, door_y);
 		if (next)
 			next->undo (state);
 		door->toggle ();
@@ -383,42 +393,79 @@ Action *TriggerCell::pass (Map *map, int incoming_dir) {
 	return new DoorToggleAction (door_x, door_y);
 }
 
-State::State (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) {
-	int x, y;
-	for (x = 0; x < MAP_WIDTH; x++) {
-		for (y = 0; y < MAP_HEIGHT; y++) {
-			switch (text_map[y][x]) {
-			case '#': map.set_cell (x, y, new WallCell (x, y)); break;
-			case '@': cass.x = x; cass.y = y; cass.steps = 0;// Deliverate fallthrough
-			case '.': map.set_cell (x, y, new EmptyCell (x, y)); break;
-			case '^': map.set_cell (x, y, new TrapCell (x, y)); break;
-			case '%': map.set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
-			}
-			if (text_map[y][x] >= 'a' && text_map[y][x] <= 'z') {
-				int id = text_map[y][x] - 'a';
-				for (int sx = 0; sx < MAP_WIDTH; sx++) {
-					for (int sy = 0; sy < MAP_HEIGHT; sy++) {
-						if (text_map[sy][sx] == 'A' + id) {
-							DoorCell *door = new DoorCell (sx, sy, false);
-							map.set_cell (sx, sy, door);
-							map.set_cell (x, y, new TriggerCell (x, y, sx, sy));
+Map::~Map () {
+	for (int x = 0; x < sizex; x++) {
+		for (int y = 0; y < sizey; y++) {
+			delete get_cell (x, y);
+		}
+	}
+	delete cells;
+}
+
+State::State (const char *filename) {
+	FILE *f;
+	int width, height;
+	char *textmap;
+
+	f = fopen (filename, "rt");
+	if (!f) {
+		printf ("Could not open %s", filename);
+		return;
+	}
+	if (fscanf (f, "%d,%d\n", &width, &height) != 2) {
+		printf ("Could not read map width & height from file");
+		return;
+	}
+	map = new Map (width, height);
+
+	textmap = new char[width * height];
+	for (int y = 0; y < map->get_sizey (); y++) {
+		for (int x = 0; x < map->get_sizex (); x++) {
+			fscanf (f, "%c", textmap + x * height + y);
+		}
+		fscanf (f, "\n");
+	}
+	fclose (f);
+
+	for (int y = 0; y < map->get_sizey (); y++) {
+		for (int x = 0; x < map->get_sizex (); x++) {
+			char c = textmap[x * height + y];
+			switch (c) {
+			case '#': map->set_cell (x, y, new WallCell (x, y)); break;
+			case '@': cass.x = x; cass.y = y; cass.steps = 0; // Deliverate fallthrough
+			case '.': map->set_cell (x, y, new EmptyCell (x, y)); break;
+			case '^': map->set_cell (x, y, new TrapCell (x, y)); break;
+			case '%': map->set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
+			default:
+				if (c >= 'a' && c <= 'z') {
+					int id = c - 'a';
+					for (int sx = 0; sx < map->get_sizex (); sx++) {
+						for (int sy = 0; sy < map->get_sizey (); sy++) {
+							char sc = textmap[sx * height + sy];
+							if (sc == 'A' + id) {
+								DoorCell *door = new DoorCell (sx, sy, false);
+								map->set_cell (sx, sy, door);
+								map->set_cell (x, y, new TriggerCell (x, y, sx, sy));
+							}
 						}
 					}
-				}
+				} else
+					if (c < 'A' && c > 'Z') {
+						printf ("Unknown char '%c' at %d, %d", c, x, y);
+						return;
+					}
+				break;
 			}
 		}
 	}
+	delete textmap;
+
 	cass.dir = 0;
 	cass.dead = false;
 }
 
 State::~State () {
-	int x, y;
-	for (x = 0; x < MAP_WIDTH; x++) {
-		for (y = 0; y < MAP_HEIGHT; y++) {
-			delete map.get_cell (x, y);
-		}
-	}
+	delete map;
 }
 bool State::can_input (SDL_Keycode keycode) {
 	int dir = -1;
@@ -439,7 +486,7 @@ bool State::can_input (SDL_Keycode keycode) {
 	if (!cass.dead && dir > -1) {
 		int new_x = cass.x + dirs[dir][0];
 		int new_y = cass.y + dirs[dir][1];
-		if (map.get_cell (new_x, new_y)->can_pass (&map, dir)) return true;
+		if (map->get_cell (new_x, new_y)->can_pass (map, dir)) return true;
 	}
 	return false;
 }
@@ -464,9 +511,9 @@ Action *State::input (SDL_Keycode keycode) {
 	if (!cass.dead && dir > -1) {
 		int new_x = cass.x + dirs[dir][0];
 		int new_y = cass.y + dirs[dir][1];
-		if (map.get_cell (new_x, new_y)->can_pass (&map, dir)) {
+		if (map->get_cell (new_x, new_y)->can_pass (map, dir)) {
 			action = new CassAction (dirs[dir][0], dirs[dir][1], false);
-			action->add (map.get_cell (new_x, new_y)->pass (&map, dir));
+			action->add (map->get_cell (new_x, new_y)->pass (map, dir));
 		}
 	}
 
@@ -475,10 +522,10 @@ Action *State::input (SDL_Keycode keycode) {
 
 bool State::is_same (const State *other) const {
 	int x, y;
-	for (x = 0; x < MAP_WIDTH; x++) {
-		for (y = 0; y < MAP_HEIGHT; y++) {
-			const Cell *cell = map.get_cell (x, y);
-			const Cell *other_cell = other->map.get_cell (x, y);
+	for (x = 0; x < map->get_sizex (); x++) {
+		for (y = 0; y < map->get_sizey (); y++) {
+			const Cell *cell = map->get_cell (x, y);
+			const Cell *other_cell = other->map->get_cell (x, y);
 			if (!cell->is_same (other_cell)) return false;
 		}
 	}
@@ -496,7 +543,7 @@ struct Game {
 	bool show_ghosts;
 	State state;
 
-	Game (const char text_map[MAP_HEIGHT][MAP_WIDTH + 1]) : finished (false), show_ghosts (false), max_depth (3), state (text_map) {}
+	Game (const char *filename) : finished (false), show_ghosts (false), max_depth (3), state (filename) {}
 
 	bool can_input (SDL_Keycode keycode) {
 		int dir = -1;
@@ -701,29 +748,7 @@ int main (int argc, char *argv[]) {
 	GLint tex_uniform = glGetUniformLocation (ghostplane_program, "tex");
 	glProgramUniform1i (ghostplane_program, tex_uniform, 0);
 
-	static const char textMap[MAP_HEIGHT][MAP_WIDTH + 1] = {
-		"####################",
-		"#c.......C.........#",
-		"###.#.#.##.........#",
-		"#.....#..#.........#",
-		"#.#.#.##.A..%......#",
-		"#.%....^.#..b...^..#",
-		"#.###.##.#.........#",
-		"#.#.#.#.a#.........#",
-		"#...#@..###.#.#.#.##",
-		"###.#####.%........#",
-		"#...#.....#.#.#.#.##",
-		"###.#.#####........#",
-		"#.....#..##.##..#.^#",
-		"#####.##.#...#^.#..#",
-		"#......^.#.#.#..#..#",
-		"#.######.#...#.###B#",
-		"#........#.#.#.#...#",
-		"#####.####...#.#...#",
-		"#.^........#...%...#",
-		"####################",
-	};
-	Game game (textMap);
+	Game game ("..\\map1.txt");
 
 	SDL_Event e;
 	bool quit = false;
