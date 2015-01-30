@@ -57,7 +57,6 @@ struct Renderable {
 
 struct Cass : Renderable {
 	int x, y;
-	int dir;
 	bool dead;
 	int steps;
 
@@ -126,24 +125,27 @@ struct Cell : Renderable {
 
 struct EmptyCell : Cell {
 	EmptyCell (int x, int y) : Cell (x, y, 2, 6, true) {}
-	Cell *clone () const { return new EmptyCell (*this); }
+	Cell *clone () const { return new EmptyCell (x, y); }
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+	virtual bool is_same (const EmptyCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 };
 
 struct WallCell : Cell {
 	WallCell (int x, int y) : Cell (x, y, 0, 5, true) {}
-	Cell *clone () const { return new WallCell (*this); }
+	Cell *clone () const { return new WallCell (x, y); }
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+	virtual bool is_same (const WallCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return false; }
 };
 
 struct TrapCell : Cell {
 	TrapCell (int x, int y) : Cell (x, y, 2, 6, true) {}
-	Cell *clone () const { return new TrapCell (*this); }
+	Cell *clone () const { return new TrapCell (x, y); }
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+	virtual bool is_same (const TrapCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -164,12 +166,11 @@ struct PushableBlockCell : Cell {
 	}
 
 	Cell *clone () const {
-		PushableBlockCell *new_pushable = new PushableBlockCell (*this);
-		new_pushable->block_below = block_below->clone ();
-		return new_pushable;
+		return new PushableBlockCell (x, y, block_below->clone ());
 	}
 
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+	virtual bool is_same (const PushableBlockCell *cell) const { return block_below->is_same (cell->block_below); }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const {
 		int newx = x + dirs[incoming_dir][0];
@@ -184,8 +185,9 @@ struct DoorCell : Cell {
 	bool open;
 
 	DoorCell (int x, int y, bool open) : Cell (x, y, 3, 5, false), open (open) {}
-	Cell *clone () const { return new DoorCell (*this); }
+	Cell *clone () const { return new DoorCell (x, y, open); }
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+	virtual bool is_same (const DoorCell *cell) const { return open == cell->open; }
 
 	virtual void render (float alpha) {
 		if (open) {
@@ -207,8 +209,9 @@ struct TriggerCell : Cell {
 	int door_x, door_y;
 
 	TriggerCell (int x, int y, int door_x, int door_y) : Cell (x, y, 2, 2, true), door_x (door_x), door_y (door_y) {}
-	Cell *clone () const { return new TriggerCell (*this); }
+	Cell *clone () const { return new TriggerCell (x, y, door_x, door_y); }
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+	virtual bool is_same (const TriggerCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -219,6 +222,9 @@ struct State {
 	Map *map;
 
 	State (const char *filename);
+	State (int map_sizex, int map_sizey) {
+		map = new Map (map_sizex, map_sizey);
+	}
 	~State ();
 
 	void render_background (float alpha) {
@@ -234,12 +240,13 @@ struct State {
 	}
 
 	State *clone () {
-		State *new_state = new State (*this);
+		State *new_state = new State (map->get_sizex (), map->get_sizey ());
 		for (int x = 0; x < map->get_sizex (); x++) {
-			for (int y = 0; y < map->get_sizex (); y++) {
+			for (int y = 0; y < map->get_sizey (); y++) {
 				new_state->map->set_cell (x, y, map->get_cell (x, y)->clone ());
 			}
 		}
+		new_state->cass = cass;
 
 		return new_state;
 	}
@@ -460,7 +467,6 @@ State::State (const char *filename) {
 	}
 	delete textmap;
 
-	cass.dir = 0;
 	cass.dead = false;
 }
 
@@ -541,9 +547,15 @@ struct Game {
 	bool finished;
 	int max_depth;
 	bool show_ghosts;
-	State state;
+	State *state;
 
-	Game (const char *filename) : finished (false), show_ghosts (false), max_depth (3), state (filename) {}
+	Game (const char *filename) : finished (false), show_ghosts (false), max_depth (3) {
+		state = new State (filename);
+	}
+
+	~Game () {
+		delete state;
+	}
 
 	bool can_input (SDL_Keycode keycode) {
 		int dir = -1;
@@ -554,7 +566,7 @@ struct Game {
 		case SDLK_KP_MINUS:
 			return true;
 		default:
-			return state.can_input (keycode);
+			return state->can_input (keycode);
 		}
 	}
 
@@ -575,7 +587,7 @@ struct Game {
 			max_depth = max_depth > 1 ? max_depth - 1 : max_depth;
 			break;
 		default:
-			action = state.input (keycode);
+			action = state->input (keycode);
 			break;
 		}
 
@@ -595,7 +607,7 @@ void recurse (Game *game, float alpha, int depth) {
 
 	for (i = 0; i < 4; i++) {
 		if (game->can_input (actions[i])) {
-			probs[i] = weights[(i + 4 - game->state.cass.dir) % 4];
+			probs[i] = weights[i];
 		} else {
 			probs[i] = 0;
 		}
@@ -608,15 +620,183 @@ void recurse (Game *game, float alpha, int depth) {
 			float p = alpha * probs[i] / total_prob;
 			action = game->input (actions[i]);
 			if (action) {
-				action->apply (&game->state);
-				game->state.render_background (p);
-				game->state.render_cass (p);
+				action->apply (game->state);
+				game->state->render_background (p);
+				game->state->render_cass (p);
 				recurse (game, p, depth + 1);
-				action->undo (&game->state);
+				action->undo (game->state);
 			}
 			delete action;
 		}
 	}
+}
+
+enum Inputs {
+	UP,
+	DOWN,
+	LEFT,
+	RIGHT,
+	NUM_INPUTS
+};
+
+int InputKeys[] = {
+	SDLK_UP,
+	SDLK_DOWN,
+	SDLK_LEFT,
+	SDLK_RIGHT
+};
+
+struct StateNode;
+
+struct StateTransition {
+	Action *action;
+	StateNode *origin;
+	StateNode *target;
+
+	~StateTransition () {
+		if (action)
+			delete action;
+	}
+};
+
+struct StateNode {
+	// Indexed by input
+	StateTransition *transition[4];
+	StateTransition *origin;
+	State *cache;
+	StateNode *next_in_cell;
+	StateNode *next_in_incomplete_list;
+
+	StateNode (StateTransition *origin) : origin (origin), cache (NULL), next_in_cell (NULL), next_in_incomplete_list (NULL) {
+		memset (transition, 0, sizeof (transition));
+	}
+
+	~StateNode () {
+		delete cache;
+		for (int i = 0; i < NUM_INPUTS; i++) {
+			if (transition[i]) delete transition[i];
+		}
+	}
+};
+
+struct StateNodeHash {
+	StateNode **hash;
+	int sizex, sizey;
+
+	StateNodeHash (const Map *map) {
+		sizex = map->get_sizex ();
+		sizey = map->get_sizey ();
+		hash = new StateNode*[sizex * sizey];
+		memset (hash, 0, sizex * sizey * sizeof (StateNode *));
+	}
+
+	~StateNodeHash () {
+		for (int y = 0; y < sizey; y++) {
+			for (int x = 0; x < sizex; x++) {
+				StateNode *node = get_at (x, y);
+				while (node) {
+					StateNode *tmp = node;
+					node = node->next_in_cell;
+					delete tmp;
+				}
+			}
+		}
+		delete hash;
+	}
+
+	StateNode *get_at (int x, int y) {
+		return hash[x * sizey + y];
+	}
+
+	void set_at (int x, int y, StateNode *node) {
+		hash[x * sizey + y] = node;
+	}
+
+	void add (StateNode *node) {
+		int x = node->cache->cass.x;
+		int y = node->cache->cass.y;
+		StateNode *tmp = get_at(x, y), *prv = NULL;
+		while (tmp) {
+			prv = tmp;
+			tmp = tmp->next_in_cell;
+		}
+		if (!prv)
+			set_at (x, y, node);
+		else
+			prv->next_in_cell = node;
+	}
+
+	StateNode *find_similar (StateNode *node) {
+		int x = node->cache->cass.x;
+		int y = node->cache->cass.y;
+		StateNode *tmp = get_at(x, y);
+		while (tmp) {
+			if (node->cache->is_same (tmp->cache)) return tmp;
+			tmp = tmp->next_in_cell;
+		}
+		return NULL;
+	}
+
+	void print () {
+		for (int y = 0; y < sizey; y++) {
+			for (int n = 0; n < 4; n++) {
+				for (int x = 0; x < sizex; x++) {
+					StateNode *node = get_at (x, y);
+					for (int nn = 0; nn < n; nn++) {
+						if (node) node = node->next_in_cell;
+					}
+					if (!node) {
+						printf ("   ");
+					} else {
+						printf ("%03d", node->cache->cass.steps);
+					}
+					printf (" ");
+				}
+				printf ("\n");
+			}
+			printf ("\n");
+		}
+	}
+};
+
+/* Consumes nodes from the incomplete nodes list at head, and returns the new head and tail*/
+void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode **ptail) {
+	StateNode *head = *phead;
+	for (int i = 0; i < NUM_INPUTS; i++) {
+		if (head->transition[i]) continue;
+		StateTransition *trans = new StateTransition;
+		head->transition[i] = trans;
+		trans->origin = head;
+		trans->action = head->cache->input (InputKeys[i]);
+		if (trans->action) {
+			StateNode *target = new StateNode (trans);
+			target->cache = head->cache->clone ();
+			trans->action->apply (target->cache);
+
+			StateNode *other_target = hash->find_similar (target);
+			if (other_target) {
+				/*
+				if (target->cache->is_better (other_target->cache)) {
+				} else {
+					delete target;
+					target = other_target;
+				}
+				*/
+				delete target;
+				target = other_target;
+			} else {
+				hash->add (target);
+
+				/* Add to list of nodes to explore */
+				(*ptail)->next_in_incomplete_list = target;
+				*ptail = target;
+			}
+
+			trans->target = target;
+
+		}
+	}
+	(*phead) = head->next_in_incomplete_list;
 }
 
 int main (int argc, char *argv[]) {
@@ -750,6 +930,16 @@ int main (int argc, char *argv[]) {
 
 	Game game ("..\\map1.txt");
 
+	StateNodeHash node_hash (game.state->map);
+	StateNode *root = new StateNode (NULL);
+	root->cache = game.state->clone ();
+	node_hash.add (root);
+	StateNode *incomplete_head = root, *incomplete_tail = root;
+	while (incomplete_head) {
+		process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
+	}
+	node_hash.print ();
+
 	SDL_Event e;
 	bool quit = false;
 	Action *action;
@@ -762,7 +952,7 @@ int main (int argc, char *argv[]) {
 			case SDL_KEYDOWN:
 				action = game.input (e.key.keysym.sym);
 				if (action) {
-					action->apply (&game.state);
+					action->apply (game.state);
 					delete action;
 				}
 				if (game.finished)
@@ -777,8 +967,8 @@ int main (int argc, char *argv[]) {
 		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glUseProgram (0);
 		glClear (GL_COLOR_BUFFER_BIT);
-		game.state.render_background (2.f);
-		game.state.render_cass (2.f);
+		game.state->render_background (2.f);
+		game.state->render_cass (2.f);
 
 		if (game.show_ghosts) {
 			// Render ghosts on ghostplane
