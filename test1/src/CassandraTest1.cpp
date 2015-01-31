@@ -113,6 +113,7 @@ struct Cell : Renderable {
 	virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
 	virtual Action *pass (Map *map, int incoming_dir) { return NULL; };
 	virtual bool is_hole () const { return false; }
+	virtual void toggle () {}
 
 	virtual bool is_same (const Cell *cell) const = 0;
 	virtual bool is_same (const EmptyCell *cell) const { return false; }
@@ -169,6 +170,10 @@ struct PushableBlockCell : Cell {
 		return new PushableBlockCell (x, y, block_below->clone ());
 	}
 
+	virtual void toggle () {
+		block_below->toggle ();
+	}
+
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
 	virtual bool is_same (const PushableBlockCell *cell) const { return block_below->is_same (cell->block_below); }
 
@@ -200,7 +205,7 @@ struct DoorCell : Cell {
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return open; }
 
-	void toggle () {
+	virtual void toggle () {
 		open = !open;
 	}
 };
@@ -369,8 +374,7 @@ struct DoorToggleAction : Action {
 	DoorToggleAction (int door_x, int door_y) : door_x (door_x), door_y (door_y) {}
 
 	void apply (State *state) {
-		DoorCell *door = (DoorCell *)state->map->get_cell (door_x, door_y);
-		door->toggle ();
+		state->map->get_cell (door_x, door_y)->toggle ();
 		if (next)
 			next->apply (state);
 	}
