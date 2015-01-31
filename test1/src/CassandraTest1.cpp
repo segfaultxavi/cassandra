@@ -657,6 +657,7 @@ struct StateTransition {
 	StateNode *origin;
 	StateNode *target;
 
+	StateTransition () : action (NULL), origin (NULL), target (NULL) {}
 	~StateTransition () {
 		if (action)
 			delete action;
@@ -743,20 +744,38 @@ struct StateNodeHash {
 
 	void print () {
 		for (int y = 0; y < sizey; y++) {
-			for (int n = 0; n < 4; n++) {
-				for (int x = 0; x < sizex; x++) {
-					StateNode *node = get_at (x, y);
-					for (int nn = 0; nn < n; nn++) {
-						if (node) node = node->next_in_cell;
+			for (int n = 0; n < 6; n++) {
+				for (int i = 0; i < NUM_INPUTS; i++) {
+					for (int x = 0; x < sizex; x++) {
+						StateNode *node = get_at (x, y);
+						for (int nn = 0; nn < n; nn++) {
+							if (node) node = node->next_in_cell;
+						}
+						if (!node) {
+							printf ("                 ");
+						} else {
+							switch (i) {
+							case 0:
+								printf ("%08x>", ((int)node) & 0xFFFFFFFF);
+								break;
+							case 1:
+								printf ("%8d ", node->cache->cass.steps);
+								break;
+							default:
+								printf ("         ");
+								break;
+							}
+							if (node->transition[i]->target) {
+								printf ("%08x", ((int)node->transition[i]->target) & 0xFFFFFFFF);
+							} else {
+								printf ("--------");
+
+							}
+						}
+						printf ("|");
 					}
-					if (!node) {
-						printf ("   ");
-					} else {
-						printf ("%03d", node->cache->cass.steps);
-					}
-					printf (" ");
+					printf ("\n");
 				}
-				printf ("\n");
 			}
 			printf ("\n");
 		}
