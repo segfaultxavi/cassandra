@@ -29,6 +29,7 @@ struct TrapCell;
 struct DoorCell;
 struct TriggerCell;
 struct PushableBlockCell;
+struct GoalCell;
 struct State;
 
 static const int dirs[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
@@ -58,6 +59,7 @@ struct Renderable {
 struct Cass : Renderable {
 	int x, y;
 	bool dead;
+	bool won;
 	int steps;
 
 	Cass () : Renderable (4, 0) {}
@@ -66,7 +68,11 @@ struct Cass : Renderable {
 		if (dead) {
 			tilex = 8; tiley = 3;
 		} else {
-			tilex = 4; tiley = 0;
+			if (won) {
+				tilex = 9; tiley = 0;
+			} else {
+				tilex = 4; tiley = 0;
+			}
 		}
 		Renderable::render (x, y, alpha);
 	}
@@ -122,6 +128,7 @@ struct Cell : Renderable {
 	virtual bool is_same (const PushableBlockCell *cell) const { return false; }
 	virtual bool is_same (const DoorCell *cell) const { return false; }
 	virtual bool is_same (const TriggerCell *cell) const { return false; }
+	virtual bool is_same (const GoalCell *cell) const { return false; }
 };
 
 struct EmptyCell : Cell {
@@ -222,6 +229,16 @@ struct TriggerCell : Cell {
 	virtual Action *pass (Map *map, int incoming_dir);
 };
 
+struct GoalCell : Cell {
+	GoalCell (int x, int y) : Cell (x, y, 0, 2, true) {}
+	Cell *clone () const { return new GoalCell (x, y); }
+	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
+	virtual bool is_same (const GoalCell *cell) const { return true; }
+
+	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
+	virtual Action *pass (Map *map, int incoming_dir);
+};
+
 struct State {
 	Cass cass;
 	Map *map;
@@ -288,14 +305,17 @@ struct Action {
 struct CassAction : Action {
 	int inc_x, inc_y;
 	bool toggle_dead;
+	bool toggle_won;
 
-	CassAction (int inc_x, int inc_y, bool toggle_dead) : inc_x (inc_x), inc_y (inc_y), toggle_dead (toggle_dead) {}
+	CassAction (int inc_x, int inc_y, bool toggle_dead, bool toggle_won) :
+		inc_x (inc_x), inc_y (inc_y), toggle_dead (toggle_dead), toggle_won (toggle_won) {}
 
 	void apply (State *state) {
 		state->cass.x += inc_x;
 		state->cass.y += inc_y;
 		state->cass.steps++;
 		state->cass.dead ^= toggle_dead;
+		state->cass.won ^= toggle_won;
 		if (next)
 			next->apply (state);
 	}
@@ -307,6 +327,7 @@ struct CassAction : Action {
 		state->cass.y -= inc_y;
 		state->cass.steps--;
 		state->cass.dead ^= toggle_dead;
+		state->cass.won ^= toggle_won;
 	}
 };
 
@@ -388,7 +409,7 @@ struct DoorToggleAction : Action {
 };
 
 Action *TrapCell::pass (Map *map, int incoming_dir) {
-	return new CassAction (0, 0, true);
+	return new CassAction (0, 0, true, false);
 }
 
 Action *PushableBlockCell::pass (Map *map, int incoming_dir) {
@@ -402,6 +423,10 @@ Action *PushableBlockCell::pass (Map *map, int incoming_dir) {
 
 Action *TriggerCell::pass (Map *map, int incoming_dir) {
 	return new DoorToggleAction (door_x, door_y);
+}
+
+Action *GoalCell::pass (Map *map, int incoming_dir) {
+	return new CassAction (0, 0, false, true);
 }
 
 Map::~Map () {
@@ -447,6 +472,7 @@ State::State (const char *filename) {
 			case '.': map->set_cell (x, y, new EmptyCell (x, y)); break;
 			case '^': map->set_cell (x, y, new TrapCell (x, y)); break;
 			case '%': map->set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
+			case '*': map->set_cell (x, y, new GoalCell (x, y)); break;
 			default:
 				if (c >= 'a' && c <= 'z') {
 					int id = c - 'a';
@@ -472,6 +498,7 @@ State::State (const char *filename) {
 	delete textmap;
 
 	cass.dead = false;
+	cass.won = false;
 }
 
 State::~State () {
@@ -493,7 +520,7 @@ bool State::can_input (SDL_Keycode keycode) {
 		dir = 3;
 		break;
 	}
-	if (!cass.dead && dir > -1) {
+	if (!cass.dead && !cass.won && dir > -1) {
 		int new_x = cass.x + dirs[dir][0];
 		int new_y = cass.y + dirs[dir][1];
 		if (map->get_cell (new_x, new_y)->can_pass (map, dir)) return true;
@@ -518,11 +545,11 @@ Action *State::input (SDL_Keycode keycode) {
 		dir = 3;
 		break;
 	}
-	if (!cass.dead && dir > -1) {
+	if (!cass.dead && !cass.won && dir > -1) {
 		int new_x = cass.x + dirs[dir][0];
 		int new_y = cass.y + dirs[dir][1];
 		if (map->get_cell (new_x, new_y)->can_pass (map, dir)) {
-			action = new CassAction (dirs[dir][0], dirs[dir][1], false);
+			action = new CassAction (dirs[dir][0], dirs[dir][1], false, false);
 			action->add (map->get_cell (new_x, new_y)->pass (map, dir));
 		}
 	}
