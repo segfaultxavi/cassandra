@@ -150,7 +150,7 @@ struct WallCell : Cell {
 };
 
 struct TrapCell : Cell {
-	TrapCell (int x, int y) : Cell (x, y, 2, 6, true) {}
+	TrapCell (int x, int y) : Cell (x, y, 3, 2, true) {}
 	Cell *clone () const { return new TrapCell (x, y); }
 	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
 	virtual bool is_same (const TrapCell *cell) const { return true; }
