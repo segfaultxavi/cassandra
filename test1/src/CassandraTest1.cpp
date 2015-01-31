@@ -759,6 +759,12 @@ struct StateNodeHash {
 								printf ("%08x>", ((int)node) & 0xFFFFFFFF);
 								break;
 							case 1:
+								if (node->origin)
+									printf ("%08x ", ((int)node->origin->origin) & 0xFFFFFFFF);
+								else
+									printf ("         ");
+								break;
+							case 2:
 								printf ("%8d ", node->cache->cass.steps);
 								break;
 							default:
@@ -820,6 +826,7 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 		}
 	}
 	(*phead) = head->next_in_incomplete_list;
+	head->next_in_incomplete_list = NULL;
 }
 
 int main (int argc, char *argv[]) {
