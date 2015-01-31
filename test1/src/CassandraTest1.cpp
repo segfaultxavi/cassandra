@@ -770,9 +770,25 @@ struct StateNodeHash {
 	}
 
 	void print () {
+		printf ("+");
+		for (int x = 0; x < sizex; x++) {
+			printf ("-----------------+");
+		}
+		printf ("\n");
 		for (int y = 0; y < sizey; y++) {
-			for (int n = 0; n < 6; n++) {
+			int max_height = 0;
+			for (int x = 0; x < sizex; x++) {
+				int height = 0;
+				StateNode *node = get_at (x, y);
+				while (node) {
+					node = node->next_in_cell;
+					height++;
+				}
+				if (height > max_height) max_height = height;
+			}
+			for (int n = 0; n < max_height; n++) {
 				for (int i = 0; i < NUM_INPUTS; i++) {
+					printf ("|");
 					for (int x = 0; x < sizex; x++) {
 						StateNode *node = get_at (x, y);
 						for (int nn = 0; nn < n; nn++) {
@@ -801,7 +817,7 @@ struct StateNodeHash {
 							if (node->transition[i]->target) {
 								printf ("%08x", ((int)node->transition[i]->target) & 0xFFFFFFFF);
 							} else {
-								printf ("--------");
+								printf ("........");
 
 							}
 						}
@@ -809,6 +825,10 @@ struct StateNodeHash {
 					}
 					printf ("\n");
 				}
+			}
+			printf ("+");
+			for (int x = 0; x < sizex; x++) {
+				printf ("-----------------+");
 			}
 			printf ("\n");
 		}
