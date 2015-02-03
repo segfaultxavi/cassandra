@@ -111,8 +111,6 @@ struct Cell : Renderable {
 	virtual Cell *clone () const = 0;
 
 	virtual void render (float alpha) {
-		if (inmutable && alpha <= 1.0)
-			return;
 		Renderable::render (x, y, alpha);
 	};
 
@@ -948,63 +946,6 @@ int main (int argc, char *argv[]) {
 	glEnable (GL_BLEND);
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	/* Create ghostplane texture */
-	GLuint ghostplane_tex, ghostplane_fbo;
-	glGenFramebuffers (1, &ghostplane_fbo);
-	glBindFramebuffer (GL_FRAMEBUFFER, ghostplane_fbo);
-	glGenTextures (1, &ghostplane_tex);
-	glBindTexture (GL_TEXTURE_2D, ghostplane_tex);
-	glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA32F, SCREEN_WIDTH, SCREEN_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glFramebufferTexture2D (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ghostplane_tex, 0);
-	result = glCheckFramebufferStatus (GL_FRAMEBUFFER);
-	if (result != GL_FRAMEBUFFER_COMPLETE) {
-		printf ("FBO incomplete\n");
-	}
-
-	/* Ghostplane rendering shader */
-	char *ghostplane_vertex_shader_source =
-		"void main() {"
-		"  gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;"
-		"  gl_TexCoord[0] = gl_MultiTexCoord0;"
-		"}";
-
-	char *ghostplane_fragment_shader_source =
-		"uniform sampler2D tex;"
-		"void main() {"
-		"  vec4 color = texture2D(tex, gl_TexCoord[0].st);"
-		"  gl_FragColor.r = color.r / color.a;"
-		"  gl_FragColor.g = color.g / color.a;"
-		"  gl_FragColor.b = color.b / color.a;"
-		"  gl_FragColor.a = 1.0;"
-		"}";
-
-	GLuint ghostplane_program = glCreateProgram ();
-	GLuint ghostplane_vertex_shader = glCreateShader (GL_VERTEX_SHADER);
-	GLuint ghostplane_fragment_shader = glCreateShader (GL_FRAGMENT_SHADER);
-
-	glShaderSource (ghostplane_vertex_shader, 1, &ghostplane_vertex_shader_source, NULL);
-	glShaderSource (ghostplane_fragment_shader, 1, &ghostplane_fragment_shader_source, NULL);
-
-	glCompileShaderARB (ghostplane_vertex_shader);
-	glCompileShaderARB (ghostplane_fragment_shader);
-
-	glAttachShader (ghostplane_program, ghostplane_vertex_shader);
-	glAttachShader (ghostplane_program, ghostplane_fragment_shader);
-
-	GLint status;
-	char log[1024];
-	GLsizei logsize;
-	glLinkProgram (ghostplane_program);
-	glGetProgramiv (ghostplane_program, GL_LINK_STATUS, &status);
-	glGetProgramInfoLog (ghostplane_program, 1024, &logsize, log);
-	if (status != 1 || logsize != 0) {
-		printf ("Program failed (link status %d):\n%s", status, log);
-	}
-	GLint tex_uniform = glGetUniformLocation (ghostplane_program, "tex");
-	glProgramUniform1i (ghostplane_program, tex_uniform, 0);
-
 	Game game ("..\\map1.txt");
 
 	StateNodeHash node_hash (game.state->map);
@@ -1039,34 +980,11 @@ int main (int argc, char *argv[]) {
 		}
 
 		// Render solid world
-		glBindTexture (GL_TEXTURE_2D, tiles_tex);
-		glBindFramebuffer (GL_FRAMEBUFFER, 0);
-		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glUseProgram (0);
 		glClear (GL_COLOR_BUFFER_BIT);
-		game.state->render_background (2.f);
-		game.state->render_cass (2.f);
+		game.state->render_background (1.f);
+		game.state->render_cass (1.f);
 
 		if (game.show_ghosts) {
-			// Render ghosts on ghostplane
-			glBindTexture (GL_TEXTURE_2D, tiles_tex);
-			glBindFramebuffer (GL_FRAMEBUFFER, ghostplane_fbo);
-			glBlendFunc (GL_SRC_ALPHA, GL_ONE);
-			glClear (GL_COLOR_BUFFER_BIT);
-			recurse (&game, 1.f, 0);
-
-			// Render ghostplane
-			glBindFramebuffer (GL_FRAMEBUFFER, 0);
-			glBlendFunc (GL_ONE, GL_ONE);
-			glBindTexture (GL_TEXTURE_2D, ghostplane_tex);
-			glUseProgram (ghostplane_program);
-			glColor3f (1.f, 1.f, 1.f);
-			glBegin (GL_TRIANGLE_STRIP);
-			glTexCoord2f (0.f, 1.f); glVertex2i (0, 0);
-			glTexCoord2f (1.f, 1.f); glVertex2i (SCREEN_WIDTH, 0);
-			glTexCoord2f (0.f, 0.f); glVertex2i (0, SCREEN_HEIGHT);
-			glTexCoord2f (1.f, 0.f); glVertex2i (SCREEN_WIDTH, SCREEN_HEIGHT);
-			glEnd ();
 		}
 
 		SDL_GL_SwapWindow (win);
