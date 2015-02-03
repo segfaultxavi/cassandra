@@ -767,6 +767,13 @@ struct StateNodeHash {
 		return NULL;
 	}
 
+	bool is_first_at (StateNode *node) {
+		int x = node->cache->cass.x;
+		int y = node->cache->cass.y;
+		StateNode *tmp = get_at (x, y);
+		return tmp == node;
+	}
+
 	void print () {
 		printf ("+");
 		for (int x = 0; x < sizex; x++) {
@@ -803,7 +810,7 @@ struct StateNodeHash {
 								if (node->origin)
 									printf ("%08x ", ((int)node->origin->origin) & 0xFFFFFFFF);
 								else
-									printf ("         ");
+									printf (" <root>  ");
 								break;
 							case 2:
 								printf ("%8d ", node->cache->cass.steps);
@@ -812,11 +819,13 @@ struct StateNodeHash {
 								printf ("         ");
 								break;
 							}
+							if (!node->transition[i]) {
+								printf ("        ");
+							} else
 							if (node->transition[i]->target) {
 								printf ("%08x", ((int)node->transition[i]->target) & 0xFFFFFFFF);
 							} else {
 								printf ("........");
-
 							}
 						}
 						printf ("|");
@@ -833,9 +842,66 @@ struct StateNodeHash {
 	}
 };
 
-/* Consumes nodes from the incomplete nodes list at head, and returns the new head and tail*/
-void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode **ptail) {
+enum ViewState {
+	UNKNOWN = 0,
+	DISCARDED,
+	IN_PROCESS,
+	JUST_PROCESSED,
+	GOAL
+};
+
+struct ViewMap {
+	ViewMap (int sizex, int sizey) : sizex (sizex), sizey (sizey) {
+		cells = new ViewState[sizex * sizey];
+		memset (cells, 0, sizex * sizey * sizeof (ViewState));
+	}
+
+	~ViewMap () {
+		delete cells;
+	}
+
+	int get_sizex () const { return sizex; }
+	int get_sizey () const { return sizey; }
+	ViewState get_cell (int x, int y) { return cells[x * sizey + y]; }
+	const ViewState get_cell (int x, int y) const { return cells[x * sizey + y]; }
+	void set_cell (int x, int y, ViewState c) {
+		if (cells[x * sizey + y] < c)
+		cells[x * sizey + y] = c;
+	}
+
+	void render () {
+		glDisable (GL_TEXTURE_2D);
+		for (int x = 0; x < sizex; x++) {
+			for (int y = 0; y < sizey; y++) {
+				switch (get_cell (x, y)) {
+				case UNKNOWN: glColor4ub (0, 0, 0, 0); break;
+				case DISCARDED: glColor4ub (0, 0, 0, 0); break;
+				case IN_PROCESS: glColor4ub (255, 255, 255, 64); break;
+				case JUST_PROCESSED: glColor4ub (255, 0, 0, 64); break;
+				case GOAL: glColor4ub (255, 255, 0, 64); break;
+				}
+				glBegin (GL_TRIANGLE_STRIP);
+				for (int sx = 0; sx < 2; sx++) {
+					for (int sy = 0; sy < 2; sy++) {
+						glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
+					}
+				}
+				glEnd ();
+			}
+		}
+		glEnable (GL_TEXTURE_2D);
+	}
+
+private:
+	int sizex;
+	int sizey;
+	ViewState *cells;
+};
+
+/* Consumes nodes from the incomplete nodes list at head, and returns the new head and tail */
+void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode **ptail, ViewMap *vmap) {
 	StateNode *head = *phead;
+	bool in_process = false;
 	for (int i = 0; i < NUM_INPUTS; i++) {
 		if (head->transition[i]) continue;
 		StateTransition *trans = new StateTransition;
@@ -849,17 +915,15 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 
 			StateNode *other_target = hash->find_similar (target);
 			if (other_target) {
-				/*
-				if (target->cache->is_better (other_target->cache)) {
-				} else {
-					delete target;
-					target = other_target;
+				if (!other_target->transition[0]) {
+					/* Other node has not been processed yet, so we are better */
+					in_process = true;
 				}
-				*/
 				delete target;
 				target = other_target;
 			} else {
 				hash->add (target);
+				in_process = true;
 
 				/* Add to list of nodes to explore */
 				(*ptail)->next_in_incomplete_list = target;
@@ -870,6 +934,23 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 
 		}
 	}
+
+	if (head->cache->cass.won && hash->is_first_at (head)) {
+		StateNode *tmp = head;
+		/* Backtrack to mark goal */
+		while (tmp) {
+			vmap->set_cell (tmp->cache->cass.x, tmp->cache->cass.y, GOAL);
+			tmp = tmp->origin ? tmp->origin->origin : NULL;
+		}
+	} else {
+		if (!in_process) {
+			/* TODO: Backtrack to mark other discarded nodes */
+			vmap->set_cell (head->cache->cass.x, head->cache->cass.y, DISCARDED);
+		} else {
+			vmap->set_cell (head->cache->cass.x, head->cache->cass.y, IN_PROCESS);
+		}
+	}
+
 	(*phead) = head->next_in_incomplete_list;
 	head->next_in_incomplete_list = NULL;
 }
@@ -953,8 +1034,11 @@ int main (int argc, char *argv[]) {
 	root->cache = game.state->clone ();
 	node_hash.add (root);
 	StateNode *incomplete_head = root, *incomplete_tail = root;
+	ViewMap vmap (game.state->map->get_sizex (), game.state->map->get_sizey ());
 	while (incomplete_head) {
-		process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
+		process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail, &vmap);
+//		node_hash.print ();
+//		printf ("\n");
 	}
 	node_hash.print ();
 
@@ -985,6 +1069,8 @@ int main (int argc, char *argv[]) {
 		game.state->render_cass (1.f);
 
 		if (game.show_ghosts) {
+			// Render ghosts
+			vmap.render ();
 		}
 
 		SDL_GL_SwapWindow (win);
