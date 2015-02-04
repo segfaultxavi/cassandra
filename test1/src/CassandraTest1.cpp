@@ -815,6 +815,7 @@ struct StateNodeHash {
 	}
 
 	void print () {
+		static const char state_names[4][3] = { "DE", "IN", "JU", "GO" };
 		printf ("+");
 		for (int x = 0; x < sizex; x++) {
 			printf ("-----------------+");
@@ -832,7 +833,7 @@ struct StateNodeHash {
 				if (height > max_height) max_height = height;
 			}
 			for (int n = 0; n < max_height; n++) {
-				for (int i = 0; i < NUM_INPUTS; i++) {
+				for (int i = 0; i < NUM_INPUTS + (n < max_height - 1 ? 1 : 0); i++) {
 					printf ("|");
 					for (int x = 0; x < sizex; x++) {
 						StateNode *node = get_at (x, y);
@@ -853,16 +854,16 @@ struct StateNodeHash {
 									printf (" <root>  ");
 								break;
 							case 2:
-								printf ("%8d ", node->cache->cass.steps);
+								printf ("steps%3d ", node->cache->cass.steps);
 								break;
 							case 3:
-								printf ("state %d  ", node->view_state);
+								printf ("state %s ", state_names[node->view_state]);
 								break;
 							default:
 								printf ("         ");
 								break;
 							}
-							if (!node->transition[i]) {
+							if (i >= NUM_INPUTS || !node->transition[i]) {
 								printf ("        ");
 							} else
 							if (node->transition[i]->target) {
@@ -884,6 +885,23 @@ struct StateNodeHash {
 		}
 	}
 };
+
+void mark_dead (StateNode *node) {
+	for (int i = 0; i < NUM_INPUTS; i++) {
+		StateNode *target = node->transition[i]->target;
+		if (target && target->view_state != DEAD_END) {
+			if (target->cache->cass.steps > node->cache->cass.steps || target->cache->cass.won)
+				return;
+		}
+	}
+	node->view_state = DEAD_END;
+	for (int i = 0; i < NUM_INPUTS; i++) {
+		StateNode *target = node->transition[i]->target;
+		if (target && target->view_state != DEAD_END) {
+			mark_dead (target);
+		}
+	}
+}
 
 /* Consumes nodes from the incomplete nodes list at head, and returns the new head and tail */
 void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode **ptail) {
@@ -918,7 +936,6 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 			}
 
 			trans->target = target;
-
 		}
 	}
 
@@ -931,8 +948,8 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 		}
 	} else {
 		if (!in_process) {
-			/* TODO: Backtrack to mark other discarded nodes */
-			head->view_state = DEAD_END;
+			/* Backtrack to mark other discarded nodes */
+			mark_dead (head);
 		} else {
 			head->view_state = JUST_PROCESSED;
 		}
@@ -1033,6 +1050,8 @@ int main (int argc, char *argv[]) {
 			while (incomplete_head && SDL_GetTicks () - last_time < 33) {
 				process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
 			}
+			if (!incomplete_head)
+				node_hash.print ();
 			pending = SDL_PollEvent (&e);
 		} else {
 			pending = SDL_WaitEventTimeout (&e, 33);
