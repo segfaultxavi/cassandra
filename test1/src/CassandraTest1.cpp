@@ -689,6 +689,13 @@ struct StateTransition {
 	}
 };
 
+enum ViewState {
+	DEAD_END,
+	IN_PROCESS,
+	JUST_PROCESSED,
+	GOAL
+};
+
 struct StateNode {
 	// Indexed by input
 	StateTransition *transition[4];
@@ -696,8 +703,9 @@ struct StateNode {
 	State *cache;
 	StateNode *next_in_cell;
 	StateNode *next_in_incomplete_list;
+	ViewState view_state;
 
-	StateNode (StateTransition *origin) : origin (origin), cache (NULL), next_in_cell (NULL), next_in_incomplete_list (NULL) {
+	StateNode (StateTransition *origin) : origin (origin), cache (NULL), next_in_cell (NULL), next_in_incomplete_list (NULL), view_state (IN_PROCESS) {
 		memset (transition, 0, sizeof (transition));
 	}
 
@@ -774,6 +782,38 @@ struct StateNodeHash {
 		return tmp == node;
 	}
 
+	void render () {
+		glDisable (GL_TEXTURE_2D);
+		for (int x = 0; x < sizex; x++) {
+			for (int y = 0; y < sizey; y++) {
+				StateNode *node = get_at (x, y), *best = node;
+				if (!node)
+					continue;
+				while (node) {
+					if (node->view_state > best->view_state)
+						best = node;
+					node = node->next_in_cell;
+				}
+				switch (best->view_state) {
+				case DEAD_END: glColor4ub (0, 0, 0, 0); break;
+				case IN_PROCESS: glColor4ub (255, 255, 255, 64); break;
+				case JUST_PROCESSED: glColor4ub (0, 255, 0, 64);
+					best->view_state = IN_PROCESS;
+					break;
+				case GOAL: glColor4ub (255, 255, 0, 64); break;
+				}
+				glBegin (GL_TRIANGLE_STRIP);
+				for (int sx = 0; sx < 2; sx++) {
+					for (int sy = 0; sy < 2; sy++) {
+						glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
+					}
+				}
+				glEnd ();
+			}
+		}
+		glEnable (GL_TEXTURE_2D);
+	}
+
 	void print () {
 		printf ("+");
 		for (int x = 0; x < sizex; x++) {
@@ -815,6 +855,9 @@ struct StateNodeHash {
 							case 2:
 								printf ("%8d ", node->cache->cass.steps);
 								break;
+							case 3:
+								printf ("state %d  ", node->view_state);
+								break;
 							default:
 								printf ("         ");
 								break;
@@ -842,67 +885,8 @@ struct StateNodeHash {
 	}
 };
 
-enum ViewState {
-	UNKNOWN = 0,
-	DISCARDED,
-	IN_PROCESS,
-	JUST_PROCESSED,
-	GOAL
-};
-
-struct ViewMap {
-	ViewMap (int sizex, int sizey) : sizex (sizex), sizey (sizey) {
-		cells = new ViewState[sizex * sizey];
-		memset (cells, 0, sizex * sizey * sizeof (ViewState));
-	}
-
-	~ViewMap () {
-		delete cells;
-	}
-
-	int get_sizex () const { return sizex; }
-	int get_sizey () const { return sizey; }
-	ViewState get_cell (int x, int y) { return cells[x * sizey + y]; }
-	const ViewState get_cell (int x, int y) const { return cells[x * sizey + y]; }
-	void set_cell (int x, int y, ViewState c) { cells[x * sizey + y] = c; }
-	void set_cell_if_better (int x, int y, ViewState c) {
-		if (cells[x * sizey + y] < c)
-		cells[x * sizey + y] = c;
-	}
-
-	void render () {
-		glDisable (GL_TEXTURE_2D);
-		for (int x = 0; x < sizex; x++) {
-			for (int y = 0; y < sizey; y++) {
-				switch (get_cell (x, y)) {
-				case UNKNOWN: glColor4ub (0, 0, 0, 0); break;
-				case DISCARDED: glColor4ub (0, 0, 0, 0); break;
-				case IN_PROCESS: glColor4ub (255, 255, 255, 64); break;
-				case JUST_PROCESSED: glColor4ub (0, 255, 0, 64);
-					set_cell (x, y, IN_PROCESS);
-					break;
-				case GOAL: glColor4ub (255, 255, 0, 64); break;
-				}
-				glBegin (GL_TRIANGLE_STRIP);
-				for (int sx = 0; sx < 2; sx++) {
-					for (int sy = 0; sy < 2; sy++) {
-						glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
-					}
-				}
-				glEnd ();
-			}
-		}
-		glEnable (GL_TEXTURE_2D);
-	}
-
-private:
-	int sizex;
-	int sizey;
-	ViewState *cells;
-};
-
 /* Consumes nodes from the incomplete nodes list at head, and returns the new head and tail */
-void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode **ptail, ViewMap *vmap) {
+void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode **ptail) {
 	StateNode *head = *phead;
 	bool in_process = false;
 	for (int i = 0; i < NUM_INPUTS; i++) {
@@ -942,15 +926,15 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 		StateNode *tmp = head;
 		/* Backtrack to mark goal */
 		while (tmp) {
-			vmap->set_cell_if_better (tmp->cache->cass.x, tmp->cache->cass.y, GOAL);
+			tmp->view_state = GOAL;
 			tmp = tmp->origin ? tmp->origin->origin : NULL;
 		}
 	} else {
 		if (!in_process) {
 			/* TODO: Backtrack to mark other discarded nodes */
-			vmap->set_cell_if_better (head->cache->cass.x, head->cache->cass.y, DISCARDED);
+			head->view_state = DEAD_END;
 		} else {
-			vmap->set_cell_if_better (head->cache->cass.x, head->cache->cass.y, JUST_PROCESSED);
+			head->view_state = JUST_PROCESSED;
 		}
 	}
 
@@ -1037,30 +1021,21 @@ int main (int argc, char *argv[]) {
 	root->cache = game.state->clone ();
 	node_hash.add (root);
 	StateNode *incomplete_head = root, *incomplete_tail = root;
-	ViewMap vmap (game.state->map->get_sizex (), game.state->map->get_sizey ());
 
 	SDL_Event e;
 	bool quit = false;
-	bool just_finished = false;
 	Action *action;
 	while (!quit) {
 		int pending = 0;
 
-		if (incomplete_head || just_finished) {
-			if (just_finished) {
-				just_finished = false;
-			} else {
-				Uint32 last_time = SDL_GetTicks ();
-				while (incomplete_head && SDL_GetTicks () - last_time < 33) {
-					process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail, &vmap);
-				}
-				if (!incomplete_head) {
-					just_finished = true;
-				}
+		if (incomplete_head) {
+			Uint32 last_time = SDL_GetTicks ();
+			while (incomplete_head && SDL_GetTicks () - last_time < 33) {
+				process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
 			}
 			pending = SDL_PollEvent (&e);
 		} else {
-			pending = SDL_WaitEvent (&e);
+			pending = SDL_WaitEventTimeout (&e, 33);
 		}
 
 		if (pending) {
@@ -1087,7 +1062,7 @@ int main (int argc, char *argv[]) {
 
 		if (game.show_ghosts) {
 			// Render ghosts
-			vmap.render ();
+			node_hash.render ();
 		}
 
 		SDL_GL_SwapWindow (win);
