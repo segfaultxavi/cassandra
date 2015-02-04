@@ -578,7 +578,7 @@ struct Game {
 	bool show_ghosts;
 	State *state;
 
-	Game (const char *filename) : finished (false), show_ghosts (false), max_depth (3) {
+	Game (const char *filename) : finished (false), show_ghosts (true), max_depth (3) {
 		state = new State (filename);
 	}
 
@@ -864,7 +864,8 @@ struct ViewMap {
 	int get_sizey () const { return sizey; }
 	ViewState get_cell (int x, int y) { return cells[x * sizey + y]; }
 	const ViewState get_cell (int x, int y) const { return cells[x * sizey + y]; }
-	void set_cell (int x, int y, ViewState c) {
+	void set_cell (int x, int y, ViewState c) { cells[x * sizey + y] = c; }
+	void set_cell_if_better (int x, int y, ViewState c) {
 		if (cells[x * sizey + y] < c)
 		cells[x * sizey + y] = c;
 	}
@@ -877,7 +878,9 @@ struct ViewMap {
 				case UNKNOWN: glColor4ub (0, 0, 0, 0); break;
 				case DISCARDED: glColor4ub (0, 0, 0, 0); break;
 				case IN_PROCESS: glColor4ub (255, 255, 255, 64); break;
-				case JUST_PROCESSED: glColor4ub (255, 0, 0, 64); break;
+				case JUST_PROCESSED: glColor4ub (0, 255, 0, 64);
+					set_cell (x, y, IN_PROCESS);
+					break;
 				case GOAL: glColor4ub (255, 255, 0, 64); break;
 				}
 				glBegin (GL_TRIANGLE_STRIP);
@@ -939,15 +942,15 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 		StateNode *tmp = head;
 		/* Backtrack to mark goal */
 		while (tmp) {
-			vmap->set_cell (tmp->cache->cass.x, tmp->cache->cass.y, GOAL);
+			vmap->set_cell_if_better (tmp->cache->cass.x, tmp->cache->cass.y, GOAL);
 			tmp = tmp->origin ? tmp->origin->origin : NULL;
 		}
 	} else {
 		if (!in_process) {
 			/* TODO: Backtrack to mark other discarded nodes */
-			vmap->set_cell (head->cache->cass.x, head->cache->cass.y, DISCARDED);
+			vmap->set_cell_if_better (head->cache->cass.x, head->cache->cass.y, DISCARDED);
 		} else {
-			vmap->set_cell (head->cache->cass.x, head->cache->cass.y, IN_PROCESS);
+			vmap->set_cell_if_better (head->cache->cass.x, head->cache->cass.y, JUST_PROCESSED);
 		}
 	}
 
@@ -1035,18 +1038,32 @@ int main (int argc, char *argv[]) {
 	node_hash.add (root);
 	StateNode *incomplete_head = root, *incomplete_tail = root;
 	ViewMap vmap (game.state->map->get_sizex (), game.state->map->get_sizey ());
-	while (incomplete_head) {
-		process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail, &vmap);
-//		node_hash.print ();
-//		printf ("\n");
-	}
-	node_hash.print ();
 
 	SDL_Event e;
 	bool quit = false;
+	bool just_finished = false;
 	Action *action;
 	while (!quit) {
-		if (SDL_WaitEvent (&e)) {
+		int pending = 0;
+
+		if (incomplete_head || just_finished) {
+			if (just_finished) {
+				just_finished = false;
+			} else {
+				Uint32 last_time = SDL_GetTicks ();
+				while (incomplete_head && SDL_GetTicks () - last_time < 33) {
+					process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail, &vmap);
+				}
+				if (!incomplete_head) {
+					just_finished = true;
+				}
+			}
+			pending = SDL_PollEvent (&e);
+		} else {
+			pending = SDL_WaitEvent (&e);
+		}
+
+		if (pending) {
 			switch (e.type) {
 			case SDL_QUIT:
 				quit = true;
