@@ -692,7 +692,6 @@ struct StateTransition {
 enum ViewState {
 	DEAD_END,
 	IN_PROCESS,
-	JUST_PROCESSED,
 	GOAL
 };
 
@@ -797,9 +796,6 @@ struct StateNodeHash {
 				switch (best->view_state) {
 				case DEAD_END: glColor4ub (0, 0, 0, 0); break;
 				case IN_PROCESS: glColor4ub (255, 255, 255, 64); break;
-				case JUST_PROCESSED: glColor4ub (0, 255, 0, 64);
-					best->view_state = IN_PROCESS;
-					break;
 				case GOAL: glColor4ub (255, 255, 0, 64); break;
 				}
 				glBegin (GL_TRIANGLE_STRIP);
@@ -886,19 +882,65 @@ struct StateNodeHash {
 	}
 };
 
-void mark_dead (StateNode *node) {
+void reset_view_state (StateNode *node) {
+	node->cache->cass.steps = 1000;
+	node->view_state = IN_PROCESS;
 	for (int i = 0; i < NUM_INPUTS; i++) {
-		StateNode *target = node->transition[i]->target;
-		if (target && target->view_state != DEAD_END) {
-			if (target->cache->cass.steps > node->cache->cass.steps || target->cache->cass.won)
-				return;
+		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
+		if (target && target->cache->cass.steps != 1000) {
+			reset_view_state (target);
 		}
 	}
-	node->view_state = DEAD_END;
+}
+
+ViewState calc_view_state (StateNode *node, int steps) {
+	// This node has already been processed
+	if (node->cache->cass.steps < steps)
+		return DEAD_END;
+
+	node->cache->cass.steps = steps;
+
+	bool processing = false;
 	for (int i = 0; i < NUM_INPUTS; i++) {
-		StateNode *target = node->transition[i]->target;
-		if (target && target->view_state != DEAD_END) {
-			mark_dead (target);
+		StateTransition *trans = node->transition[i];
+		if (!trans) {
+			processing = true;
+		} else {
+			StateNode *target = node->transition[i]->target;
+			if (target) {
+				ViewState vs = calc_view_state (target, steps + 1);
+				if (vs != DEAD_END) {
+					processing = true;
+				}
+			}
+		}
+	}
+
+	if (processing) {
+		return node->view_state = IN_PROCESS;
+	}
+
+	return node->view_state = DEAD_END;
+}
+
+void calc_goal_path (StateNode *node, int steps) {
+	// This node has already been processed
+	if (node->cache->cass.steps < steps)
+		return;
+
+	if (node->cache->cass.won) {
+		// Back track to mark GOAL nodes
+		StateNode *tmp = node;
+		while (tmp) {
+			tmp->view_state = GOAL;
+			tmp = tmp->origin ? tmp->origin->origin : NULL;
+		}
+	}
+
+	for (int i = 0; i < NUM_INPUTS; i++) {
+		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
+		if (target) {
+			calc_goal_path (target, steps + 1);
 		}
 	}
 }
@@ -936,22 +978,6 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 			}
 
 			trans->target = target;
-		}
-	}
-
-	if (head->cache->cass.won && hash->is_first_at (head)) {
-		StateNode *tmp = head;
-		/* Backtrack to mark goal */
-		while (tmp) {
-			tmp->view_state = GOAL;
-			tmp = tmp->origin ? tmp->origin->origin : NULL;
-		}
-	} else {
-		if (!in_process) {
-			/* Backtrack to mark other discarded nodes */
-			mark_dead (head);
-		} else {
-			head->view_state = JUST_PROCESSED;
 		}
 	}
 
@@ -1050,8 +1076,12 @@ int main (int argc, char *argv[]) {
 			while (incomplete_head && SDL_GetTicks () - last_time < 33) {
 				process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
 			}
-			if (!incomplete_head)
+			if (!incomplete_head) {
 				node_hash.print ();
+			}
+			reset_view_state (root);
+			calc_view_state (root, 0);
+			calc_goal_path (root, 0);
 			pending = SDL_PollEvent (&e);
 		} else {
 			pending = SDL_WaitEventTimeout (&e, 33);
