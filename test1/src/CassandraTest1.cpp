@@ -781,14 +781,19 @@ struct StateNodeHash {
 				StateNode *node = get_at (x, y), *best = node;
 				if (!node)
 					continue;
+				int total_nodes = 0, in_process_nodes = 0;
 				while (node) {
+					total_nodes++;
+					if (node->view_state == IN_PROCESS)
+						in_process_nodes++;
 					if (node->view_state > best->view_state)
 						best = node;
 					node = node->next_in_cell;
 				}
+				float col = in_process_nodes / (float)total_nodes;
 				switch (best->view_state) {
 				case DEAD_END: glColor4ub (0, 0, 0, 0); break;
-				case IN_PROCESS: glColor4ub (255, 255, 255, 64); break;
+				case IN_PROCESS: glColor4f (col, col, col, 0.5f); break;
 				case GOAL: glColor4ub (255, 255, 0, 64); break;
 				}
 				glBegin (GL_TRIANGLE_STRIP);
