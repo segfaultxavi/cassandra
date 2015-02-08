@@ -17,6 +17,8 @@
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 640
 
+#define MAX_STEPS 100000
+
 extern unsigned char tiles_data[];
 int tiles_width, tiles_height;
 int cell_width, cell_height;
@@ -60,7 +62,6 @@ struct Cass : Renderable {
 	int x, y;
 	bool dead;
 	bool won;
-	int steps;
 
 	Cass () : Renderable (4, 0) {}
 
@@ -275,7 +276,6 @@ struct State {
 	Action *input (SDL_Keycode keycode);
 
 	bool is_same (const State *other) const;
-	bool is_better (const State *other) const;
 };
 
 struct Action {
@@ -311,7 +311,6 @@ struct CassAction : Action {
 	void apply (State *state) {
 		state->cass.x += inc_x;
 		state->cass.y += inc_y;
-		state->cass.steps++;
 		state->cass.dead ^= toggle_dead;
 		state->cass.won ^= toggle_won;
 		if (next)
@@ -323,7 +322,6 @@ struct CassAction : Action {
 			next->undo (state);
 		state->cass.x -= inc_x;
 		state->cass.y -= inc_y;
-		state->cass.steps--;
 		state->cass.dead ^= toggle_dead;
 		state->cass.won ^= toggle_won;
 	}
@@ -466,7 +464,7 @@ State::State (const char *filename) {
 			char c = textmap[x * height + y];
 			switch (c) {
 			case '#': map->set_cell (x, y, new WallCell (x, y)); break;
-			case '@': cass.x = x; cass.y = y; cass.steps = 0; // Deliverate fallthrough
+			case '@': cass.x = x; cass.y = y; // Deliverate fallthrough
 			case '.': map->set_cell (x, y, new EmptyCell (x, y)); break;
 			case '^': map->set_cell (x, y, new TrapCell (x, y)); break;
 			case '%': map->set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
@@ -566,10 +564,6 @@ bool State::is_same (const State *other) const {
 	}
 
 	return true;
-}
-
-bool State::is_better (const State *other) const {
-	return cass.steps < other->cass.steps;
 }
 
 struct Game {
@@ -679,10 +673,9 @@ struct StateNode;
 
 struct StateTransition {
 	Action *action;
-	StateNode *origin;
 	StateNode *target;
 
-	StateTransition () : action (NULL), origin (NULL), target (NULL) {}
+	StateTransition () : action (NULL), target (NULL) {}
 	~StateTransition () {
 		if (action)
 			delete action;
@@ -698,13 +691,13 @@ enum ViewState {
 struct StateNode {
 	// Indexed by input
 	StateTransition *transition[4];
-	StateTransition *origin;
 	State *cache;
 	StateNode *next_in_cell;
 	StateNode *next_in_incomplete_list;
 	ViewState view_state;
+	int steps;
 
-	StateNode (StateTransition *origin) : origin (origin), cache (NULL), next_in_cell (NULL), next_in_incomplete_list (NULL), view_state (IN_PROCESS) {
+	StateNode () : cache (NULL), next_in_cell (NULL), next_in_incomplete_list (NULL), view_state (IN_PROCESS), steps(0) {
 		memset (transition, 0, sizeof (transition));
 	}
 
@@ -844,15 +837,9 @@ struct StateNodeHash {
 								printf ("%08x>", ((int)node) & 0xFFFFFFFF);
 								break;
 							case 1:
-								if (node->origin)
-									printf ("%08x ", ((int)node->origin->origin) & 0xFFFFFFFF);
-								else
-									printf (" <root>  ");
+								printf ("steps%3d ", node->steps);
 								break;
 							case 2:
-								printf ("steps%3d ", node->cache->cass.steps);
-								break;
-							case 3:
 								printf ("state %s ", state_names[node->view_state]);
 								break;
 							default:
@@ -883,11 +870,11 @@ struct StateNodeHash {
 };
 
 void reset_view_state (StateNode *node) {
-	node->cache->cass.steps = 1000;
+	node->steps = MAX_STEPS;
 	node->view_state = IN_PROCESS;
 	for (int i = 0; i < NUM_INPUTS; i++) {
 		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
-		if (target && target->cache->cass.steps != 1000) {
+		if (target && target->steps != MAX_STEPS) {
 			reset_view_state (target);
 		}
 	}
@@ -895,10 +882,10 @@ void reset_view_state (StateNode *node) {
 
 ViewState calc_view_state (StateNode *node, int steps) {
 	// This node has already been processed
-	if (node->cache->cass.steps < steps)
+	if (node->steps < steps)
 		return DEAD_END;
 
-	node->cache->cass.steps = steps;
+	node->steps = steps;
 
 	bool processing = false;
 	for (int i = 0; i < NUM_INPUTS; i++) {
@@ -923,26 +910,27 @@ ViewState calc_view_state (StateNode *node, int steps) {
 	return node->view_state = DEAD_END;
 }
 
-void calc_goal_path (StateNode *node, int steps) {
+bool calc_goal_path (StateNode *node, int steps) {
 	// This node has already been processed
-	if (node->cache->cass.steps < steps)
-		return;
+	if (node->steps < steps)
+		return false;
 
-	if (node->cache->cass.won) {
+	if (node->cache->cass.won && node->steps == steps) {
 		// Back track to mark GOAL nodes
-		StateNode *tmp = node;
-		while (tmp) {
-			tmp->view_state = GOAL;
-			tmp = tmp->origin ? tmp->origin->origin : NULL;
-		}
+		node->view_state = GOAL;
+		return true;
 	}
 
 	for (int i = 0; i < NUM_INPUTS; i++) {
 		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
 		if (target) {
-			calc_goal_path (target, steps + 1);
+			if (calc_goal_path (target, steps + 1)) {
+				node->view_state = GOAL;
+				return true;
+			}
 		}
 	}
+	return false;
 }
 
 /* Consumes nodes from the incomplete nodes list at head, and returns the new head and tail */
@@ -953,10 +941,9 @@ void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode
 		if (head->transition[i]) continue;
 		StateTransition *trans = new StateTransition;
 		head->transition[i] = trans;
-		trans->origin = head;
 		trans->action = head->cache->input (InputKeys[i]);
 		if (trans->action) {
-			StateNode *target = new StateNode (trans);
+			StateNode *target = new StateNode ();
 			target->cache = head->cache->clone ();
 			trans->action->apply (target->cache);
 
@@ -1060,7 +1047,7 @@ int main (int argc, char *argv[]) {
 	Game game ("..\\map1.txt");
 
 	StateNodeHash node_hash (game.state->map);
-	StateNode *root = new StateNode (NULL);
+	StateNode *root = new StateNode ();
 	root->cache = game.state->clone ();
 	node_hash.add (root);
 	StateNode *incomplete_head = root, *incomplete_tail = root;
@@ -1077,7 +1064,7 @@ int main (int argc, char *argv[]) {
 				process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
 			}
 			if (!incomplete_head) {
-				node_hash.print ();
+//				node_hash.print ();
 			}
 			reset_view_state (root);
 			calc_view_state (root, 0);
