@@ -1052,10 +1052,10 @@ int main (int argc, char *argv[]) {
 	Game game ("..\\map1.txt");
 
 	StateNodeHash node_hash (game.state->map);
-	StateNode *root = new StateNode ();
-	root->cache = game.state->clone ();
-	node_hash.add (root);
-	StateNode *incomplete_head = root, *incomplete_tail = root;
+	StateNode *current_node = new StateNode ();
+	current_node->cache = game.state->clone ();
+	node_hash.add (current_node);
+	StateNode *incomplete_head = current_node, *incomplete_tail = current_node;
 
 	SDL_Event e;
 	bool quit = false;
@@ -1071,9 +1071,9 @@ int main (int argc, char *argv[]) {
 			if (!incomplete_head) {
 //				node_hash.print ();
 			}
-			reset_view_state (root);
-			calc_view_state (root, 0);
-			calc_goal_path (root, 0);
+			reset_view_state (current_node);
+			calc_view_state (current_node, 0);
+			calc_goal_path (current_node, 0);
 			pending = SDL_PollEvent (&e);
 		} else {
 			pending = SDL_WaitEventTimeout (&e, 33);
@@ -1089,6 +1089,15 @@ int main (int argc, char *argv[]) {
 				if (action) {
 					action->apply (game.state);
 					delete action;
+
+					for (int i = 0; i < NUM_INPUTS; i++) {
+						if (InputKeys[i] == e.key.keysym.sym && current_node->transition[i]) {
+							current_node = current_node->transition[i]->target;
+							reset_view_state (current_node);
+							calc_view_state (current_node, 0);
+							calc_goal_path (current_node, 0);
+						}
+					}
 				}
 				if (game.finished)
 					quit = true;
