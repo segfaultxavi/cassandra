@@ -1,15 +1,8 @@
 Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
-- State machine approach, with nodes as game states and transitions as user actions.
-- Build state diagram progressively. Keep a list of nodes with unexplored transitions.
-- Merge nodes when equal. Equality function. Use a hash table indexed by Cass position.
-  Every entry in the hash is a list of nodes (game states) which have Cass in that position.
-- Keeping as whole copy of game state in each node can be expensive. Keep only the Actions in the transitions and build
-  the game state as the exploration progresses.
-- When two states are equal except for the number of steps taken, the worst is replaced by the best (= Dijkstra).
-  How does exploration continue?
-- Rendering: Nodes that lead somewhere are white, otherwise (no action leads to a node with fewer steps), black.
-  If they lead to the goal, yellow.
-- When Cass moves: A node becomes the current one, and that prediction is still valid. Other nodes will need to be recalculated.
+- OPTIMIZATIONS:
+  - Keeping as whole copy of game state in each node can be expensive.
+    - Keep only the Actions in the transitions and build the game state as the exploration progresses. OR
+    - Store a const pointer to original state and a "diff", which will be mostly NULL.
 - Render blocks only when in LOS (or render darker)
 - Wolf: Moves and goes for Cass if it sees her
 - Archer: Kills Cass if it sees her
