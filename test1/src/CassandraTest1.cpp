@@ -809,7 +809,7 @@ struct StateNodeHash {
 	}
 
 	void print () {
-		static const char state_names[4][3] = { "DE", "IN", "JU", "GO" };
+		static const char state_names[4][3] = { "DE", "PR", "GO" };
 		printf ("+");
 		for (int x = 0; x < sizex; x++) {
 			printf ("-----------------+");
@@ -847,6 +847,9 @@ struct StateNodeHash {
 							case 2:
 								printf ("state %s ", state_names[node->view_state]);
 								break;
+							case 3:
+								printf ("%4s%4s ", node->cache->cass.dead ? "Dead" : "", node->cache->cass.won ? "Won" : "");
+								break;
 							default:
 								printf ("         ");
 								break;
@@ -874,13 +877,16 @@ struct StateNodeHash {
 	}
 };
 
-void reset_view_state (StateNode *node) {
-	node->steps = MAX_STEPS;
-	node->view_state = IN_PROCESS;
-	for (int i = 0; i < NUM_INPUTS; i++) {
-		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
-		if (target && target->steps != MAX_STEPS) {
-			reset_view_state (target);
+void reset_view_state (StateNodeHash *map) {
+
+	for (int x = 0; x < map->sizex; x++) {
+		for (int y = 0; y < map->sizey; y++) {
+			StateNode *node = map->get_at (x, y);
+			while (node) {
+				node->steps = MAX_STEPS;
+				node->view_state = DEAD_END;
+				node = node->next_in_cell;
+			}
 		}
 	}
 }
@@ -915,12 +921,34 @@ ViewState calc_view_state (StateNode *node, int steps) {
 	return node->view_state = DEAD_END;
 }
 
-bool calc_goal_path (StateNode *node, int steps) {
+int find_minimum_goal_distance (StateNode *node, int steps) {
+	// This node has already been processed
+	if (node->steps < steps)
+		return MAX_STEPS;
+
+	if (node->cache->cass.won) {
+		return steps;
+	}
+
+	int min_dist = MAX_STEPS;
+	for (int i = 0; i < NUM_INPUTS; i++) {
+		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
+		if (target) {
+			int dist = find_minimum_goal_distance (target, steps + 1);
+			if (dist < min_dist) {
+				min_dist = dist;
+			}
+		}
+	}
+	return min_dist;;
+}
+
+bool calc_goal_path (StateNode *node, int steps, int min_steps) {
 	// This node has already been processed
 	if (node->steps < steps)
 		return false;
 
-	if (node->cache->cass.won && node->steps == steps) {
+	if (node->cache->cass.won && node->steps == min_steps) {
 		// Back track to mark GOAL nodes
 		node->view_state = GOAL;
 		return true;
@@ -929,7 +957,7 @@ bool calc_goal_path (StateNode *node, int steps) {
 	for (int i = 0; i < NUM_INPUTS; i++) {
 		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
 		if (target) {
-			if (calc_goal_path (target, steps + 1)) {
+			if (calc_goal_path (target, steps + 1, min_steps)) {
 				node->view_state = GOAL;
 				return true;
 			}
@@ -1068,12 +1096,10 @@ int main (int argc, char *argv[]) {
 			while (incomplete_head && SDL_GetTicks () - last_time < 33) {
 				process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
 			}
-			if (!incomplete_head) {
-//				node_hash.print ();
-			}
-			reset_view_state (current_node);
+			reset_view_state (&node_hash);
 			calc_view_state (current_node, 0);
-			calc_goal_path (current_node, 0);
+			int dist = find_minimum_goal_distance (current_node, 0);
+			calc_goal_path (current_node, 0, dist);
 			pending = SDL_PollEvent (&e);
 		} else {
 			pending = SDL_WaitEventTimeout (&e, 33);
@@ -1085,17 +1111,21 @@ int main (int argc, char *argv[]) {
 				quit = true;
 				break;
 			case SDL_KEYDOWN:
+				if (e.key.keysym.sym == SDLK_p)
+					node_hash.print ();
 				action = game.input (e.key.keysym.sym);
 				if (action) {
 					action->apply (game.state);
 					delete action;
 
 					for (int i = 0; i < NUM_INPUTS; i++) {
+						// FIXME When this transition has not been calculated yet
 						if (InputKeys[i] == e.key.keysym.sym && current_node->transition[i]) {
 							current_node = current_node->transition[i]->target;
-							reset_view_state (current_node);
+							reset_view_state (&node_hash);
 							calc_view_state (current_node, 0);
-							calc_goal_path (current_node, 0);
+							int dist = find_minimum_goal_distance (current_node, 0);
+							calc_goal_path (current_node, 0, dist);
 						}
 					}
 				}
