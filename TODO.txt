@@ -1,17 +1,20 @@
-Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
+Cassandra library:
+- Separate lib code from game. Game depends on SDL and GL. lib has tests, which can be run in a terminal, and timed.
 - OPTIMIZATIONS:
   - Keeping as whole copy of game state in each node can be expensive.
     - Keep only the Actions in the transitions and build the game state as the exploration progresses. OR
     - Store a const pointer to original state and a "diff", which will be mostly NULL.
+
+Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
 - Render blocks only when in LOS (or render darker)
 - Wolf: Moves and goes for Cass if it sees her
 - Archer: Kills Cass if it sees her
 
 Cassanda test 2: Discrete in time and space, position is matrix-based, time is independent of player
 - Timed blocks
-- Wolf advances on its own.
+- Wolf and Archer advance on their own.
 
 Cassandra test 3: Continuous in time and space, matrix map but free-running player and objects (positions not limited to matrix)
-- Mobs (intelligent, rolling balls)
+- Rolling balls
 - Free-running Cass
 
