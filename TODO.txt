@@ -17,4 +17,3 @@ Cassanda test 2: Discrete in time and space, position is matrix-based, time is i
 Cassandra test 3: Continuous in time and space, matrix map but free-running player and objects (positions not limited to matrix)
 - Rolling balls
 - Free-running Cass
-
