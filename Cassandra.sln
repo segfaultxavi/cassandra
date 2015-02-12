@@ -1,9 +1,14 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Express 2013 for Windows Desktop
-VisualStudioVersion = 12.0.30723.0
+VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CassandraTest1", "test1\win32\CassandraTest1.vcxproj", "{C536104F-B783-440A-8E4B-FAD8E81E4B90}"
+	ProjectSection(ProjectDependencies) = postProject
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72} = {D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "libCassandra", "lib\win32\libCassandra.vcxproj", "{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +26,14 @@ Global
 		{C536104F-B783-440A-8E4B-FAD8E81E4B90}.Release|Win32.Build.0 = Release|Win32
 		{C536104F-B783-440A-8E4B-FAD8E81E4B90}.Release|x64.ActiveCfg = Release|x64
 		{C536104F-B783-440A-8E4B-FAD8E81E4B90}.Release|x64.Build.0 = Release|x64
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Debug|Win32.ActiveCfg = Debug|Win32
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Debug|Win32.Build.0 = Debug|Win32
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Debug|x64.ActiveCfg = Debug|x64
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Debug|x64.Build.0 = Debug|x64
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Release|Win32.ActiveCfg = Release|Win32
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Release|Win32.Build.0 = Release|Win32
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Release|x64.ActiveCfg = Release|x64
+		{D2D77877-BB78-4E99-8AC8-B8FBCDA67C72}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
