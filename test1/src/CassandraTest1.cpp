@@ -731,13 +731,6 @@ struct StateNodeHash {
 		return NULL;
 	}
 
-	bool is_first_at (StateNode *node) {
-		int x = node->cache->cass.x;
-		int y = node->cache->cass.y;
-		StateNode *tmp = get_at (x, y);
-		return tmp == node;
-	}
-
 	void render () {
 		glDisable (GL_TEXTURE_2D);
 		for (int x = 0; x < sizex; x++) {
