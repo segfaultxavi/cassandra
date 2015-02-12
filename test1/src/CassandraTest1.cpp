@@ -618,42 +618,6 @@ struct Game {
 	}
 };
 
-void recurse (Game *game, float alpha, int depth) {
-	static const SDL_Keycode actions[4] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT };
-	static const int weights[4] = { 3, 2, 1, 2 };
-	int probs[4], i;
-	float total_prob = 0.f;
-
-	if (depth >= game->max_depth) return;
-
-	if (alpha < 0.001f) return;
-
-	for (i = 0; i < 4; i++) {
-		if (game->can_input (actions[i])) {
-			probs[i] = weights[i];
-		} else {
-			probs[i] = 0;
-		}
-		total_prob += probs[i];
-	}
-
-	for (i = 0; i < 4; i++) {
-		if (probs[i] > 0) {
-			Action *action;
-			float p = alpha * probs[i] / total_prob;
-			action = game->input (actions[i]);
-			if (action) {
-				action->apply (game->state);
-				game->state->render_background (p);
-				game->state->render_cass (p);
-				recurse (game, p, depth + 1);
-				action->undo (game->state);
-			}
-			delete action;
-		}
-	}
-}
-
 enum Inputs {
 	UP,
 	DOWN,
