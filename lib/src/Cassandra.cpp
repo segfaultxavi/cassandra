@@ -24,11 +24,12 @@ namespace Cass {
 		StateNode *next_in_hash_bucket;
 		StateNode *next_in_incomplete_list;
 		int steps;
+		State::Progress progress;
 
 		// StateNode takes ownership of the state
 		StateNode (State *state) : state (state), transitions (NULL),
 			next_in_hash_bucket (NULL), next_in_incomplete_list (NULL), steps (0) {
-			state->set_progress (State::IN_PROCESS);
+			progress = State::IN_PROCESS;
 		}
 
 		~StateNode () {
@@ -47,19 +48,18 @@ namespace Cass {
 			if (!transitions)
 				return State::IN_PROCESS;
 
-			State::Progress ret = State::DEAD_END;
+			progress = State::DEAD_END;
 			for (int i = 0; i < NUM_TRANSITIONS; i++) {
 				StateNode *target = transitions[i];
 				if (target) {
 					State::Progress prog = target->calc_view_state (new_steps + 1);
 					if (prog != State::DEAD_END) {
-						ret = State::IN_PROCESS;
+						progress = State::IN_PROCESS;
 					}
 				}
 			}
 
-			state->set_progress (ret);
-			return ret;
+			return progress;
 		}
 
 		int find_minimum_goal_distance (int new_steps) const {
@@ -91,7 +91,7 @@ namespace Cass {
 
 			if (state->has_won () && steps == min_steps) {
 				// Back track to mark GOAL nodes
-				state->set_progress (State::GOAL);
+				progress = State::GOAL;
 				return true;
 			}
 
@@ -99,12 +99,29 @@ namespace Cass {
 				StateNode *target = transitions[i];
 				if (target) {
 					if (target->calc_goal_path (new_steps + 1, min_steps)) {
-						state->set_progress (State::GOAL);
+						progress = State::GOAL;
 						return true;
 					}
 				}
 			}
 			return false;
+		}
+
+		void render (int steps, int max_steps) {
+			if (steps == max_steps) {
+				state->render (progress);
+				return;
+			}
+
+			if (!transitions)
+				return;
+
+			for (int i = 0; i < NUM_TRANSITIONS; i++) {
+				StateNode *target = transitions[i];
+				if (target) {
+					target->render (steps + 1, max_steps);
+				}
+			}
 		}
 	};
 
@@ -135,7 +152,7 @@ namespace Cass {
 				StateNode *node = node_hash[i];
 				while (node) {
 					node->steps = StateNode::MAX_STEPS;
-					node->state->set_progress (State::DEAD_END);
+					node->progress = State::DEAD_END;
 					node = node->next_in_hash_bucket;
 				}
 			}
@@ -224,11 +241,15 @@ namespace Cass {
 			current_node = current_node->transitions[input];
 		}
 
-		virtual void calc_view_state () {
+		void calc_view_state () {
 			reset_view_state ();
 			current_node->calc_view_state (0);
 			int dist = current_node->find_minimum_goal_distance (0);
 			current_node->calc_goal_path (0, dist);
+		}
+
+		void render (int distance) {
+			current_node->render (0, distance);
 		}
 	};
 

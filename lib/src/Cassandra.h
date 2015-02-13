@@ -18,9 +18,7 @@ namespace Cass {
 		virtual State *get_transition (int i) const = 0;
 		virtual Hash get_hash () const = 0;
 		virtual bool has_won () const = 0;
-
-		virtual Progress get_progress () const = 0;
-		virtual void set_progress (Progress progress) = 0;
+		virtual void render (Progress progress) = 0;
 	};
 
 	// Applications use this to obtain solutions.
@@ -35,6 +33,7 @@ namespace Cass {
 		virtual bool done () = 0;
 		virtual void update (int input) = 0;
 		virtual void calc_view_state () = 0;
+		virtual void render (int distance) = 0;
 	};
 
 	Solver *get_solver (int num_hash_buckets, int num_inputs);

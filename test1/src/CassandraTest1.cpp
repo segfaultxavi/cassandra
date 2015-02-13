@@ -279,7 +279,6 @@ struct Action {
 struct State : Cass::State {
 	Player cass;
 	Map *map;
-	Cass::State::Progress progress;
 
 	State (const char *filename);
 	State (int map_sizex, int map_sizey) {
@@ -349,12 +348,11 @@ struct State : Cass::State {
 		return cass.won;
 	}
 
-	virtual Progress get_progress () const {
-		return progress;
-	}
-
-	virtual void set_progress (Progress progress) {
-		this->progress = progress;
+	virtual void render (Cass::State::Progress progress) {
+		if (progress == Cass::State::DEAD_END)
+			return;
+		render_background (0.5f);
+		render_cass (0.5);
 	}
 };
 
@@ -896,7 +894,7 @@ int main (int argc, char *argv[]) {
 
 		if (game.show_ghosts) {
 			// Render ghosts
-//			node_hash.render ();
+			solver->render (game.max_depth);
 		}
 
 		SDL_GL_SwapWindow (win);

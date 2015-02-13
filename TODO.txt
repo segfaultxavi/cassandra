@@ -1,5 +1,4 @@
 Cassandra library:
-- Separate lib code from game. Game depends on SDL and GL. lib has tests, which can be run in a terminal, and timed.
 - OPTIMIZATIONS:
   - Keeping as whole copy of game state in each node can be expensive.
     - Keep only the Actions in the transitions and build the game state as the exploration progresses. OR
