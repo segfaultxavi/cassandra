@@ -15,7 +15,6 @@ namespace Cass {
 
 		virtual ~State () {}
 		virtual bool equals (const State *other) const = 0;
-		virtual int num_transitions () const = 0;
 		virtual State *get_transition (int i) const = 0;
 		virtual Hash get_hash () const = 0;
 		virtual bool has_won () const = 0;
@@ -24,30 +23,21 @@ namespace Cass {
 		virtual void set_progress (Progress progress) = 0;
 	};
 
-	// Private struct
-	struct StateNode;
-
 	// Applications use this to obtain solutions.
 	// Add an initial node with add_node() and call process() until it
 	// returns true;
 	class Solver {
 	public:
-		Solver (int num_hash_buckets);
-		~Solver ();
+		virtual ~Solver () {};
 
-		void add_node (State *state);
-		bool process ();
-		void print ();
-
-	private:
-		int num_hash_buckets;
-		StateNode **node_hash;
-		StateNode *incomplete_head;
-		StateNode *incomplete_tail;
-
-		StateNode *find (State *state);
-		void reset_view_state ();
+		virtual void add_start_point (State *state) = 0;
+		virtual bool process () = 0;
+		virtual bool done () = 0;
+		virtual void update (int input) = 0;
+		virtual void calc_view_state () = 0;
 	};
+
+	Solver *get_solver (int num_hash_buckets, int num_inputs);
 }
 
 #endif

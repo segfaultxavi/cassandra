@@ -6,6 +6,7 @@
 #include <memory.h>
 #include <GL/glew.h>
 #include "SDL.h"
+#include "Cassandra.h"
 
 #ifdef _DEBUG
 #ifndef DBG_NEW
@@ -22,6 +23,21 @@
 extern unsigned char tiles_data[];
 int tiles_width, tiles_height;
 int cell_width, cell_height;
+
+enum Inputs {
+	UP,
+	DOWN,
+	LEFT,
+	RIGHT,
+	NUM_INPUTS
+};
+
+int InputKeys[] = {
+	SDLK_UP,
+	SDLK_DOWN,
+	SDLK_LEFT,
+	SDLK_RIGHT
+};
 
 struct Action;
 struct Cell;
@@ -58,12 +74,12 @@ struct Renderable {
 	}
 };
 
-struct Cass : Renderable {
+struct Player : Renderable {
 	int x, y;
 	bool dead;
 	bool won;
 
-	Cass () : Renderable (4, 0) {}
+	Player () : Renderable (4, 0) {}
 
 	void render (float alpha) {
 		if (dead) {
@@ -238,46 +254,6 @@ struct GoalCell : Cell {
 	virtual Action *pass (Map *map, int incoming_dir);
 };
 
-struct State {
-	Cass cass;
-	Map *map;
-
-	State (const char *filename);
-	State (int map_sizex, int map_sizey) {
-		map = new Map (map_sizex, map_sizey);
-	}
-	~State ();
-
-	void render_background (float alpha) {
-		for (int x = 0; x < map->get_sizex (); x++) {
-			for (int y = 0; y < map->get_sizey (); y++) {
-				map->get_cell (x, y)->render (alpha);
-			}
-		}
-	}
-
-	void render_cass (float alpha) {
-		cass.render (alpha);
-	}
-
-	State *clone () {
-		State *new_state = new State (map->get_sizex (), map->get_sizey ());
-		for (int x = 0; x < map->get_sizex (); x++) {
-			for (int y = 0; y < map->get_sizey (); y++) {
-				new_state->map->set_cell (x, y, map->get_cell (x, y)->clone ());
-			}
-		}
-		new_state->cass = cass;
-
-		return new_state;
-	}
-
-	bool can_input (SDL_Keycode keycode);
-	Action *input (SDL_Keycode keycode);
-
-	bool is_same (const State *other) const;
-};
-
 struct Action {
 	Action *next;
 
@@ -297,6 +273,88 @@ struct Action {
 			next = new_action;
 		else
 			next->add (new_action);
+	}
+};
+
+struct State : Cass::State {
+	Player cass;
+	Map *map;
+	Cass::State::Progress progress;
+
+	State (const char *filename);
+	State (int map_sizex, int map_sizey) {
+		map = new Map (map_sizex, map_sizey);
+	}
+	~State ();
+
+	void render_background (float alpha) {
+		for (int x = 0; x < map->get_sizex (); x++) {
+			for (int y = 0; y < map->get_sizey (); y++) {
+				map->get_cell (x, y)->render (alpha);
+			}
+		}
+	}
+
+	void render_cass (float alpha) {
+		cass.render (alpha);
+	}
+
+	State *clone () const {
+		State *new_state = new State (map->get_sizex (), map->get_sizey ());
+		for (int x = 0; x < map->get_sizex (); x++) {
+			for (int y = 0; y < map->get_sizey (); y++) {
+				new_state->map->set_cell (x, y, map->get_cell (x, y)->clone ());
+			}
+		}
+		new_state->cass = cass;
+
+		return new_state;
+	}
+
+	bool can_input (SDL_Keycode keycode) const;
+	Action *input (SDL_Keycode keycode) const;
+
+	//
+	// Cassandra Interface
+	//
+	virtual bool equals (const Cass::State *virt_other) const {
+		const State *other = (const State *)virt_other;
+		int x, y;
+		for (x = 0; x < map->get_sizex (); x++) {
+			for (y = 0; y < map->get_sizey (); y++) {
+				const Cell *cell = map->get_cell (x, y);
+				const Cell *other_cell = other->map->get_cell (x, y);
+				if (!cell->is_same (other_cell)) return false;
+			}
+		}
+		return true;
+	}
+
+	virtual State *get_transition (int i) const {
+		Action *action = input (InputKeys[i]);
+		if (!action)
+			return NULL;
+
+		State *new_state = clone ();
+		action->apply (new_state);
+		delete action;
+		return new_state;
+	}
+
+	virtual Hash get_hash () const {
+		return cass.x + map->get_sizex () * cass.y;
+	}
+
+	virtual bool has_won () const {
+		return cass.won;
+	}
+
+	virtual Progress get_progress () const {
+		return progress;
+	}
+
+	virtual void set_progress (Progress progress) {
+		this->progress = progress;
 	}
 };
 
@@ -500,7 +558,7 @@ State::State (const char *filename) {
 State::~State () {
 	delete map;
 }
-bool State::can_input (SDL_Keycode keycode) {
+bool State::can_input (SDL_Keycode keycode) const {
 	int dir = -1;
 	switch (keycode) {
 	case SDLK_UP:
@@ -524,7 +582,7 @@ bool State::can_input (SDL_Keycode keycode) {
 	return false;
 }
 
-Action *State::input (SDL_Keycode keycode) {
+Action *State::input (SDL_Keycode keycode) const {
 	int dir = -1;
 	Action *action = NULL;
 	switch (keycode) {
@@ -551,19 +609,6 @@ Action *State::input (SDL_Keycode keycode) {
 	}
 
 	return action;
-}
-
-bool State::is_same (const State *other) const {
-	int x, y;
-	for (x = 0; x < map->get_sizex (); x++) {
-		for (y = 0; y < map->get_sizey (); y++) {
-			const Cell *cell = map->get_cell (x, y);
-			const Cell *other_cell = other->map->get_cell (x, y);
-			if (!cell->is_same (other_cell)) return false;
-		}
-	}
-
-	return true;
 }
 
 struct Game {
@@ -618,119 +663,7 @@ struct Game {
 	}
 };
 
-enum Inputs {
-	UP,
-	DOWN,
-	LEFT,
-	RIGHT,
-	NUM_INPUTS
-};
-
-int InputKeys[] = {
-	SDLK_UP,
-	SDLK_DOWN,
-	SDLK_LEFT,
-	SDLK_RIGHT
-};
-
-struct StateNode;
-
-struct StateTransition {
-	Action *action;
-	StateNode *target;
-
-	StateTransition () : action (NULL), target (NULL) {}
-	~StateTransition () {
-		if (action)
-			delete action;
-	}
-};
-
-enum ViewState {
-	DEAD_END,
-	IN_PROCESS,
-	GOAL
-};
-
-struct StateNode {
-	// Indexed by input
-	StateTransition *transition[4];
-	State *cache;
-	StateNode *next_in_cell;
-	StateNode *next_in_incomplete_list;
-	ViewState view_state;
-	int steps;
-
-	StateNode () : cache (NULL), next_in_cell (NULL), next_in_incomplete_list (NULL), view_state (IN_PROCESS), steps(0) {
-		memset (transition, 0, sizeof (transition));
-	}
-
-	~StateNode () {
-		delete cache;
-		for (int i = 0; i < NUM_INPUTS; i++) {
-			if (transition[i]) delete transition[i];
-		}
-	}
-};
-
-struct StateNodeHash {
-	StateNode **hash;
-	int sizex, sizey;
-
-	StateNodeHash (const Map *map) {
-		sizex = map->get_sizex ();
-		sizey = map->get_sizey ();
-		hash = new StateNode*[sizex * sizey];
-		memset (hash, 0, sizex * sizey * sizeof (StateNode *));
-	}
-
-	~StateNodeHash () {
-		for (int y = 0; y < sizey; y++) {
-			for (int x = 0; x < sizex; x++) {
-				StateNode *node = get_at (x, y);
-				while (node) {
-					StateNode *tmp = node;
-					node = node->next_in_cell;
-					delete tmp;
-				}
-			}
-		}
-		delete hash;
-	}
-
-	StateNode *get_at (int x, int y) {
-		return hash[x * sizey + y];
-	}
-
-	void set_at (int x, int y, StateNode *node) {
-		hash[x * sizey + y] = node;
-	}
-
-	void add (StateNode *node) {
-		int x = node->cache->cass.x;
-		int y = node->cache->cass.y;
-		StateNode *tmp = get_at(x, y), *prv = NULL;
-		while (tmp) {
-			prv = tmp;
-			tmp = tmp->next_in_cell;
-		}
-		if (!prv)
-			set_at (x, y, node);
-		else
-			prv->next_in_cell = node;
-	}
-
-	StateNode *find_similar (StateNode *node) {
-		int x = node->cache->cass.x;
-		int y = node->cache->cass.y;
-		StateNode *tmp = get_at(x, y);
-		while (tmp) {
-			if (node->cache->is_same (tmp->cache)) return tmp;
-			tmp = tmp->next_in_cell;
-		}
-		return NULL;
-	}
-
+#if 0
 	void render () {
 		glDisable (GL_TEXTURE_2D);
 		for (int x = 0; x < sizex; x++) {
@@ -832,135 +765,7 @@ struct StateNodeHash {
 			printf ("\n");
 		}
 	}
-};
-
-void reset_view_state (StateNodeHash *map) {
-
-	for (int x = 0; x < map->sizex; x++) {
-		for (int y = 0; y < map->sizey; y++) {
-			StateNode *node = map->get_at (x, y);
-			while (node) {
-				node->steps = MAX_STEPS;
-				node->view_state = DEAD_END;
-				node = node->next_in_cell;
-			}
-		}
-	}
-}
-
-ViewState calc_view_state (StateNode *node, int steps) {
-	// This node has already been processed
-	if (node->steps < steps)
-		return DEAD_END;
-
-	node->steps = steps;
-
-	bool processing = false;
-	for (int i = 0; i < NUM_INPUTS; i++) {
-		StateTransition *trans = node->transition[i];
-		if (!trans) {
-			processing = true;
-		} else {
-			StateNode *target = node->transition[i]->target;
-			if (target) {
-				ViewState vs = calc_view_state (target, steps + 1);
-				if (vs != DEAD_END) {
-					processing = true;
-				}
-			}
-		}
-	}
-
-	if (processing) {
-		return node->view_state = IN_PROCESS;
-	}
-
-	return node->view_state = DEAD_END;
-}
-
-int find_minimum_goal_distance (StateNode *node, int steps) {
-	// This node has already been processed
-	if (node->steps < steps)
-		return MAX_STEPS;
-
-	if (node->cache->cass.won) {
-		return steps;
-	}
-
-	int min_dist = MAX_STEPS;
-	for (int i = 0; i < NUM_INPUTS; i++) {
-		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
-		if (target) {
-			int dist = find_minimum_goal_distance (target, steps + 1);
-			if (dist < min_dist) {
-				min_dist = dist;
-			}
-		}
-	}
-	return min_dist;;
-}
-
-bool calc_goal_path (StateNode *node, int steps, int min_steps) {
-	// This node has already been processed
-	if (node->steps < steps)
-		return false;
-
-	if (node->cache->cass.won && node->steps == min_steps) {
-		// Back track to mark GOAL nodes
-		node->view_state = GOAL;
-		return true;
-	}
-
-	for (int i = 0; i < NUM_INPUTS; i++) {
-		StateNode *target = node->transition[i] ? node->transition[i]->target : NULL;
-		if (target) {
-			if (calc_goal_path (target, steps + 1, min_steps)) {
-				node->view_state = GOAL;
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-/* Consumes nodes from the incomplete nodes list at head, and returns the new head and tail */
-void process_incomplete_nodes (StateNodeHash *hash, StateNode **phead, StateNode **ptail) {
-	StateNode *head = *phead;
-	bool in_process = false;
-	for (int i = 0; i < NUM_INPUTS; i++) {
-		if (head->transition[i]) continue;
-		StateTransition *trans = new StateTransition;
-		head->transition[i] = trans;
-		trans->action = head->cache->input (InputKeys[i]);
-		if (trans->action) {
-			StateNode *target = new StateNode ();
-			target->cache = head->cache->clone ();
-			trans->action->apply (target->cache);
-
-			StateNode *other_target = hash->find_similar (target);
-			if (other_target) {
-				if (!other_target->transition[0]) {
-					/* Other node has not been processed yet, so we are better */
-					in_process = true;
-				}
-				delete target;
-				target = other_target;
-			} else {
-				hash->add (target);
-				in_process = true;
-
-				/* Add to list of nodes to explore */
-				(*ptail)->next_in_incomplete_list = target;
-				*ptail = target;
-			}
-
-			trans->target = target;
-		}
-	}
-
-	(*phead) = head->next_in_incomplete_list;
-	head->next_in_incomplete_list = NULL;
-}
+#endif
 
 int main (int argc, char *argv[]) {
 	_CrtSetDbgFlag (_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
@@ -1035,12 +840,8 @@ int main (int argc, char *argv[]) {
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	Game game ("..\\map1.txt");
-
-	StateNodeHash node_hash (game.state->map);
-	StateNode *current_node = new StateNode ();
-	current_node->cache = game.state->clone ();
-	node_hash.add (current_node);
-	StateNode *incomplete_head = current_node, *incomplete_tail = current_node;
+	Cass::Solver *solver = Cass::get_solver (game.state->map->get_sizex () * game.state->map->get_sizey (), NUM_INPUTS);
+	solver->add_start_point (game.state->clone ());
 
 	SDL_Event e;
 	bool quit = false;
@@ -1048,15 +849,12 @@ int main (int argc, char *argv[]) {
 	while (!quit) {
 		int pending = 0;
 
-		if (incomplete_head) {
+		if (!solver->done ()) {
 			Uint32 last_time = SDL_GetTicks ();
-			while (incomplete_head && SDL_GetTicks () - last_time < 33) {
-				process_incomplete_nodes (&node_hash, &incomplete_head, &incomplete_tail);
+			while (!solver->done () && SDL_GetTicks () - last_time < 33) {
+				solver->process ();
 			}
-			reset_view_state (&node_hash);
-			calc_view_state (current_node, 0);
-			int dist = find_minimum_goal_distance (current_node, 0);
-			calc_goal_path (current_node, 0, dist);
+			solver->calc_view_state ();
 			pending = SDL_PollEvent (&e);
 		} else {
 			pending = SDL_WaitEventTimeout (&e, 33);
@@ -1068,8 +866,10 @@ int main (int argc, char *argv[]) {
 				quit = true;
 				break;
 			case SDL_KEYDOWN:
+#if 0
 				if (e.key.keysym.sym == SDLK_p)
 					node_hash.print ();
+#endif
 				action = game.input (e.key.keysym.sym);
 				if (action) {
 					action->apply (game.state);
@@ -1077,12 +877,9 @@ int main (int argc, char *argv[]) {
 
 					for (int i = 0; i < NUM_INPUTS; i++) {
 						// FIXME When this transition has not been calculated yet
-						if (InputKeys[i] == e.key.keysym.sym && current_node->transition[i]) {
-							current_node = current_node->transition[i]->target;
-							reset_view_state (&node_hash);
-							calc_view_state (current_node, 0);
-							int dist = find_minimum_goal_distance (current_node, 0);
-							calc_goal_path (current_node, 0, dist);
+						if (InputKeys[i] == e.key.keysym.sym) {
+							solver->update (i);
+							solver->calc_view_state ();
 						}
 					}
 				}
@@ -1099,12 +896,15 @@ int main (int argc, char *argv[]) {
 
 		if (game.show_ghosts) {
 			// Render ghosts
-			node_hash.render ();
+//			node_hash.render ();
 		}
 
 		SDL_GL_SwapWindow (win);
 	}
 
 	SDL_GL_DeleteContext (gl_context);
+
+	delete solver;
+
 	return 0;
 }
