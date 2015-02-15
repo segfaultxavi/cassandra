@@ -669,110 +669,6 @@ struct Game {
 	}
 };
 
-#if 0
-	void render () {
-		glDisable (GL_TEXTURE_2D);
-		for (int x = 0; x < sizex; x++) {
-			for (int y = 0; y < sizey; y++) {
-				StateNode *node = get_at (x, y), *best = node;
-				if (!node)
-					continue;
-				int total_nodes = 0, in_process_nodes = 0;
-				while (node) {
-					total_nodes++;
-					if (node->view_state == IN_PROCESS)
-						in_process_nodes++;
-					if (node->view_state > best->view_state)
-						best = node;
-					node = node->next_in_cell;
-				}
-				float col = in_process_nodes / (float)total_nodes;
-				switch (best->view_state) {
-				case DEAD_END: glColor4ub (0, 0, 0, 0); break;
-				case IN_PROCESS: glColor4f (col, col, col, 0.5f); break;
-				case GOAL: glColor4ub (255, 255, 0, 64); break;
-				}
-				glBegin (GL_TRIANGLE_STRIP);
-				for (int sx = 0; sx < 2; sx++) {
-					for (int sy = 0; sy < 2; sy++) {
-						glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
-					}
-				}
-				glEnd ();
-			}
-		}
-		glEnable (GL_TEXTURE_2D);
-	}
-
-	void print () {
-		static const char state_names[4][3] = { "DE", "PR", "GO" };
-		printf ("+");
-		for (int x = 0; x < sizex; x++) {
-			printf ("-----------------+");
-		}
-		printf ("\n");
-		for (int y = 0; y < sizey; y++) {
-			int max_height = 0;
-			for (int x = 0; x < sizex; x++) {
-				int height = 0;
-				StateNode *node = get_at (x, y);
-				while (node) {
-					node = node->next_in_cell;
-					height++;
-				}
-				if (height > max_height) max_height = height;
-			}
-			for (int n = 0; n < max_height; n++) {
-				for (int i = 0; i < NUM_INPUTS + (n < max_height - 1 ? 1 : 0); i++) {
-					printf ("|");
-					for (int x = 0; x < sizex; x++) {
-						StateNode *node = get_at (x, y);
-						for (int nn = 0; nn < n; nn++) {
-							if (node) node = node->next_in_cell;
-						}
-						if (!node) {
-							printf ("                 ");
-						} else {
-							switch (i) {
-							case 0:
-								printf ("%08x>", ((int)node) & 0xFFFFFFFF);
-								break;
-							case 1:
-								printf ("steps%3d ", node->steps);
-								break;
-							case 2:
-								printf ("state %s ", state_names[node->view_state]);
-								break;
-							case 3:
-								printf ("%4s%4s ", node->cache->cass.dead ? "Dead" : "", node->cache->cass.won ? "Won" : "");
-								break;
-							default:
-								printf ("         ");
-								break;
-							}
-							if (i >= NUM_INPUTS || !node->transition[i]) {
-								printf ("        ");
-							} else
-							if (node->transition[i]->target) {
-								printf ("%08x", ((int)node->transition[i]->target) & 0xFFFFFFFF);
-							} else {
-								printf ("........");
-							}
-						}
-						printf ("|");
-					}
-					printf ("\n");
-				}
-			}
-			printf ("+");
-			for (int x = 0; x < sizex; x++) {
-				printf ("-----------------+");
-			}
-			printf ("\n");
-		}
-	}
-#endif
-
 int main (int argc, char *argv[]) {
 	_CrtSetDbgFlag (_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
@@ -873,10 +769,6 @@ int main (int argc, char *argv[]) {
 				quit = true;
 				break;
 			case SDL_KEYDOWN:
-#if 0
-				if (e.key.keysym.sym == SDLK_p)
-					node_hash.print ();
-#endif
 				action = game.input (e.key.keysym.sym);
 				if (action) {
 					action->apply (game.state);
