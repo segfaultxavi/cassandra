@@ -18,7 +18,7 @@ namespace Cass {
 		virtual State *get_transition (int i) const = 0;
 		virtual Hash get_hash () const = 0;
 		virtual bool has_won () const = 0;
-		virtual void render (Progress progress) = 0;
+		virtual void render_ghosts (Progress progress, const State *current) = 0;
 	};
 
 	// Applications use this to obtain solutions.

@@ -93,6 +93,10 @@ struct Player : Renderable {
 		}
 		Renderable::render (x, y, alpha);
 	}
+
+	bool equals (const Player *other) {
+		return x == other->x && y == other->y && dead == other->dead && won == other->won;
+	}
 };
 
 struct Map {
@@ -286,15 +290,19 @@ struct State : Cass::State {
 	}
 	~State ();
 
-	void render_background (float alpha) {
+	void render_background (float alpha, const State *current = NULL) {
 		for (int x = 0; x < map->get_sizex (); x++) {
 			for (int y = 0; y < map->get_sizey (); y++) {
+				if (current && map->get_cell (x, y)->is_same (current->map->get_cell (x, y)))
+					continue;
 				map->get_cell (x, y)->render (alpha);
 			}
 		}
 	}
 
-	void render_cass (float alpha) {
+	void render_cass (float alpha, const State *current = NULL) {
+		if (current && cass.equals (&current->cass))
+			return;
 		cass.render (alpha);
 	}
 
@@ -348,11 +356,11 @@ struct State : Cass::State {
 		return cass.won;
 	}
 
-	virtual void render (Cass::State::Progress progress) {
+	virtual void render_ghosts (Cass::State::Progress progress, const Cass::State *current) {
 		if (progress == Cass::State::DEAD_END)
 			return;
-		render_background (0.5f);
-		render_cass (0.5);
+		render_background (0.5f, (State *)current);
+		render_cass (0.5, (State *)current);
 	}
 };
 
@@ -835,7 +843,7 @@ int main (int argc, char *argv[]) {
 
 	glEnable (GL_TEXTURE_2D);
 	glEnable (GL_BLEND);
-	glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBlendFunc (GL_SRC_ALPHA, GL_ONE);
 
 	Game game ("..\\map1.txt");
 	Cass::Solver *solver = Cass::get_solver (game.state->map->get_sizex () * game.state->map->get_sizey (), NUM_INPUTS);

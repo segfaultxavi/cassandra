@@ -107,9 +107,12 @@ namespace Cass {
 			return false;
 		}
 
-		void render (int steps, int max_steps) {
+		void render_ghosts (int steps, int max_steps, const StateNode *current) {
+			if (steps > this->steps)
+				return;
+
 			if (steps == max_steps) {
-				state->render (progress);
+				state->render_ghosts (progress, current->state);
 				return;
 			}
 
@@ -119,7 +122,7 @@ namespace Cass {
 			for (int i = 0; i < NUM_TRANSITIONS; i++) {
 				StateNode *target = transitions[i];
 				if (target) {
-					target->render (steps + 1, max_steps);
+					target->render_ghosts (steps + 1, max_steps, current);
 				}
 			}
 		}
@@ -249,7 +252,7 @@ namespace Cass {
 		}
 
 		void render (int distance) {
-			current_node->render (0, distance);
+			current_node->render_ghosts (0, distance, current_node);
 		}
 	};
 
