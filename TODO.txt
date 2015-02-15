@@ -1,6 +1,5 @@
 Cassandra library:
 - This is starting to be too slow:
-  - Separate Test1 into Game and Render code
   - Build a console test using Game so we can start profiling
   - Use lightweight State Diffs as clones
 - Limit the depth of scanning, so the goal is only found when you are _close_ to it. This saves memory too, of course.
