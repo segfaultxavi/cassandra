@@ -775,7 +775,6 @@ int main (int argc, char *argv[]) {
 					delete action;
 
 					for (int i = 0; i < NUM_INPUTS; i++) {
-						// FIXME When this transition has not been calculated yet
 						if (InputKeys[i] == e.key.keysym.sym) {
 							solver->update (i);
 							solver->calc_view_state ();

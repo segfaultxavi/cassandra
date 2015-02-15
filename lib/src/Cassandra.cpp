@@ -241,7 +241,12 @@ namespace Cass {
 		}
 
 		void update (int input) {
-			current_node = current_node->transitions[input];
+			// FIXME When this transition has not been calculated yet
+			if (current_node->transitions) {
+				current_node = current_node->transitions[input];
+			} else {
+				printf ("Unprocessed transition!\n");
+			}
 		}
 
 		void calc_view_state () {
