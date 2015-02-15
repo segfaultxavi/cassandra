@@ -799,7 +799,7 @@ int main (int argc, char *argv[]) {
 		}
 
 		anim_delay++;
-		if (anim_delay == 8) {
+		if (anim_delay == 4) {
 			anim_delay = 0;
 			anim_step++;
 			if (anim_step == game.max_depth)
