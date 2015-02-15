@@ -140,21 +140,21 @@ struct Cell : Renderable {
 	virtual bool is_hole () const { return false; }
 	virtual void toggle () {}
 
-	virtual bool is_same (const Cell *cell) const = 0;
-	virtual bool is_same (const EmptyCell *cell) const { return false; }
-	virtual bool is_same (const WallCell *cell) const { return false; }
-	virtual bool is_same (const TrapCell *cell) const { return false; }
-	virtual bool is_same (const PushableBlockCell *cell) const { return false; }
-	virtual bool is_same (const DoorCell *cell) const { return false; }
-	virtual bool is_same (const TriggerCell *cell) const { return false; }
-	virtual bool is_same (const GoalCell *cell) const { return false; }
+	virtual bool equals (const Cell *cell) const = 0;
+	virtual bool equals (const EmptyCell *cell) const { return false; }
+	virtual bool equals (const WallCell *cell) const { return false; }
+	virtual bool equals (const TrapCell *cell) const { return false; }
+	virtual bool equals (const PushableBlockCell *cell) const { return false; }
+	virtual bool equals (const DoorCell *cell) const { return false; }
+	virtual bool equals (const TriggerCell *cell) const { return false; }
+	virtual bool equals (const GoalCell *cell) const { return false; }
 };
 
 struct EmptyCell : Cell {
 	EmptyCell (int x, int y) : Cell (x, y, 2, 6, true) {}
 	Cell *clone () const { return new EmptyCell (x, y); }
-	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
-	virtual bool is_same (const EmptyCell *cell) const { return true; }
+	virtual bool equals (const Cell *cell) const { return cell->equals (this); }
+	virtual bool equals (const EmptyCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 };
@@ -162,8 +162,8 @@ struct EmptyCell : Cell {
 struct WallCell : Cell {
 	WallCell (int x, int y) : Cell (x, y, 0, 5, true) {}
 	Cell *clone () const { return new WallCell (x, y); }
-	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
-	virtual bool is_same (const WallCell *cell) const { return true; }
+	virtual bool equals (const Cell *cell) const { return cell->equals (this); }
+	virtual bool equals (const WallCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return false; }
 };
@@ -171,8 +171,8 @@ struct WallCell : Cell {
 struct TrapCell : Cell {
 	TrapCell (int x, int y) : Cell (x, y, 3, 2, true) {}
 	Cell *clone () const { return new TrapCell (x, y); }
-	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
-	virtual bool is_same (const TrapCell *cell) const { return true; }
+	virtual bool equals (const Cell *cell) const { return cell->equals (this); }
+	virtual bool equals (const TrapCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -200,8 +200,8 @@ struct PushableBlockCell : Cell {
 		block_below->toggle ();
 	}
 
-	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
-	virtual bool is_same (const PushableBlockCell *cell) const { return block_below->is_same (cell->block_below); }
+	virtual bool equals (const Cell *cell) const { return cell->equals (this); }
+	virtual bool equals (const PushableBlockCell *cell) const { return block_below->equals (cell->block_below); }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const {
 		int newx = x + dirs[incoming_dir][0];
@@ -217,8 +217,8 @@ struct DoorCell : Cell {
 
 	DoorCell (int x, int y, bool open) : Cell (x, y, 3, 5, false), open (open) {}
 	Cell *clone () const { return new DoorCell (x, y, open); }
-	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
-	virtual bool is_same (const DoorCell *cell) const { return open == cell->open; }
+	virtual bool equals (const Cell *cell) const { return cell->equals (this); }
+	virtual bool equals (const DoorCell *cell) const { return open == cell->open; }
 
 	virtual void render (float alpha) {
 		if (open) {
@@ -241,8 +241,8 @@ struct TriggerCell : Cell {
 
 	TriggerCell (int x, int y, int door_x, int door_y) : Cell (x, y, 2, 2, true), door_x (door_x), door_y (door_y) {}
 	Cell *clone () const { return new TriggerCell (x, y, door_x, door_y); }
-	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
-	virtual bool is_same (const TriggerCell *cell) const { return true; }
+	virtual bool equals (const Cell *cell) const { return cell->equals (this); }
+	virtual bool equals (const TriggerCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -251,8 +251,8 @@ struct TriggerCell : Cell {
 struct GoalCell : Cell {
 	GoalCell (int x, int y) : Cell (x, y, 0, 2, true) {}
 	Cell *clone () const { return new GoalCell (x, y); }
-	virtual bool is_same (const Cell *cell) const { return cell->is_same (this); }
-	virtual bool is_same (const GoalCell *cell) const { return true; }
+	virtual bool equals (const Cell *cell) const { return cell->equals (this); }
+	virtual bool equals (const GoalCell *cell) const { return true; }
 
 	virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 	virtual Action *pass (Map *map, int incoming_dir);
@@ -293,7 +293,7 @@ struct State : Cass::State {
 	void render_background (float alpha, const State *current = NULL) {
 		for (int x = 0; x < map->get_sizex (); x++) {
 			for (int y = 0; y < map->get_sizey (); y++) {
-				if (current && map->get_cell (x, y)->is_same (current->map->get_cell (x, y)))
+				if (current && map->get_cell (x, y)->equals (current->map->get_cell (x, y)))
 					continue;
 				map->get_cell (x, y)->render (alpha);
 			}
@@ -331,7 +331,7 @@ struct State : Cass::State {
 			for (y = 0; y < map->get_sizey (); y++) {
 				const Cell *cell = map->get_cell (x, y);
 				const Cell *other_cell = other->map->get_cell (x, y);
-				if (!cell->is_same (other_cell)) return false;
+				if (!cell->equals (other_cell)) return false;
 			}
 		}
 		return true;
