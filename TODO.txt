@@ -1,4 +1,6 @@
 Cassandra library:
+- Limit the depth of scanning, so the goal is only found when you are _close_ to it. This saves memory too, of course.
+- Fix overlapping ghosts.
 - OPTIMIZATIONS:
   - Keeping as whole copy of game state in each node can be expensive.
     - Keep only the Actions in the transitions and build the game state as the exploration progresses. OR
