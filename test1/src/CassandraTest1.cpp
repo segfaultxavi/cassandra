@@ -852,6 +852,7 @@ int main (int argc, char *argv[]) {
 	SDL_Event e;
 	bool quit = false;
 	Action *action;
+	int anim_step = 0, anim_delay = 0;
 	while (!quit) {
 		int pending = 0;
 
@@ -886,6 +887,7 @@ int main (int argc, char *argv[]) {
 						if (InputKeys[i] == e.key.keysym.sym) {
 							solver->update (i);
 							solver->calc_view_state ();
+							anim_step = 0;
 						}
 					}
 				}
@@ -902,7 +904,15 @@ int main (int argc, char *argv[]) {
 
 		if (game.show_ghosts) {
 			// Render ghosts
-			solver->render (game.max_depth);
+			solver->render (anim_step);
+		}
+
+		anim_delay++;
+		if (anim_delay == 8) {
+			anim_delay = 0;
+			anim_step++;
+			if (anim_step == game.max_depth)
+				anim_step = 0;
 		}
 
 		SDL_GL_SwapWindow (win);
