@@ -360,7 +360,7 @@ struct State : Cass::State {
 		if (progress == Cass::State::DEAD_END)
 			return;
 		render_background (0.5f, (State *)current);
-		render_cass (0.5, (State *)current);
+		render_cass (progress == Cass::State::GOAL ? 1.0f : 0.25f, (State *)current);
 	}
 };
 

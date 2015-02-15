@@ -59,6 +59,10 @@ namespace Cass {
 				}
 			}
 
+			// Regardless of anything else
+			if (state->has_won ())
+				return State::IN_PROCESS;
+
 			return progress;
 		}
 
