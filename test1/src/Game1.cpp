@@ -45,7 +45,9 @@ namespace Game1 {
 		virtual bool equals (const TrapCell *cell) const { return true; }
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
-		virtual Action *pass (Map *map, int incoming_dir);
+		virtual void pass (State *state, int incoming_dir){
+			state->cass.dead = true;
+		}
 
 		virtual bool is_hole () const { return true; }
 	};
@@ -81,7 +83,25 @@ namespace Game1 {
 			return (map->get_cell (newx, newy)->can_pass (map, incoming_dir));
 		}
 
-		virtual Action *pass (Map *map, int incoming_dir);
+		virtual void pass (State *state, int incoming_dir) {
+			int newx = x + dirs[incoming_dir][0];
+			int newy = y + dirs[incoming_dir][1];
+
+			if (state->map->get_cell (newx, newy)->is_hole ()) {
+				delete state->map->get_cell (newx, newy);
+				state->map->set_cell (x, y, new EmptyCell (x, y));
+				state->map->set_cell (newx, newy, new EmptyCell (newx, newy));
+				delete this;
+				return;
+			}
+
+			Cell *new_below = state->map->get_cell (newx, newy);
+			state->map->set_cell (newx, newy, this);
+			state->map->set_cell (x, y, block_below);
+			block_below = new_below;
+			x = newx;
+			y = newy;
+		}
 	};
 
 	struct DoorCell : Cell {
@@ -110,7 +130,9 @@ namespace Game1 {
 		virtual bool equals (const TriggerCell *cell) const { return true; }
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
-		virtual Action *pass (Map *map, int incoming_dir);
+		virtual void pass (State *state, int incoming_dir) {
+			state->map->get_cell (door_x, door_y)->toggle ();
+		}
 	};
 
 	struct GoalCell : Cell {
@@ -121,133 +143,10 @@ namespace Game1 {
 		virtual bool equals (const GoalCell *cell) const { return true; }
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
-		virtual Action *pass (Map *map, int incoming_dir);
-	};
-
-	struct CassAction : Action {
-		int inc_x, inc_y;
-		bool toggle_dead;
-		bool toggle_won;
-
-		CassAction (int inc_x, int inc_y, bool toggle_dead, bool toggle_won) :
-			inc_x (inc_x), inc_y (inc_y), toggle_dead (toggle_dead), toggle_won (toggle_won) {}
-
-		void apply (State *state) {
-			state->cass.x += inc_x;
-			state->cass.y += inc_y;
-			state->cass.dead ^= toggle_dead;
-			state->cass.won ^= toggle_won;
-			if (next)
-				next->apply (state);
-		}
-
-		void undo (State *state) {
-			if (next)
-				next->undo (state);
-			state->cass.x -= inc_x;
-			state->cass.y -= inc_y;
-			state->cass.dead ^= toggle_dead;
-			state->cass.won ^= toggle_won;
+		virtual void pass (State *state, int incoming_dir) {
+			state->cass.won = true;
 		}
 	};
-
-	struct RemovePushableBlockAction : Action {
-		int x, y;
-
-		RemovePushableBlockAction (int x, int y) : x (x), y (y) {}
-
-		void apply (State *state) {
-			/* Delete pushable and block below */
-			delete state->map->get_cell (x, y);
-			state->map->set_cell (x, y, new EmptyCell (x, y));
-			if (next)
-				next->apply (state);
-		}
-
-		void undo (State *state) {
-			if (next)
-				next->undo (state);
-			/* Delete empty cell */
-			delete state->map->get_cell (x, y);
-			state->map->set_cell (x, y, new PushableBlockCell (x, y, new TrapCell (x, y)));
-		}
-	};
-
-	struct PushAction : Action {
-		int pushable_x, pushable_y;
-		int inc_x, inc_y;
-		bool remove_block;
-
-		PushAction (const Map *map, int pushable_x, int pushable_y, int inc_x, int inc_y) : pushable_x (pushable_x), pushable_y (pushable_y), inc_x (inc_x), inc_y (inc_y) {
-			if (map->get_cell (pushable_x + inc_x, pushable_y + inc_y)->is_hole ()) {
-				add (new RemovePushableBlockAction (pushable_x + inc_x, pushable_y + inc_y));
-			}
-		}
-
-		void move (State *state, int pushable_x, int pushable_y, int new_x, int new_y) {
-			PushableBlockCell *pushable = (PushableBlockCell *)state->map->get_cell (pushable_x, pushable_y);
-
-			Cell *new_below = state->map->get_cell (new_x, new_y);
-			state->map->set_cell (new_x, new_y, pushable);
-			state->map->set_cell (pushable_x, pushable_y, pushable->block_below);
-			pushable->block_below = new_below;
-			pushable->x = new_x;
-			pushable->y = new_y;
-		}
-
-		void apply (State *state) {
-			/* FIXME: A PushableBlock should not go _over_ another block */
-			move (state, pushable_x, pushable_y, pushable_x + inc_x, pushable_y + inc_y);
-			if (next)
-				next->apply (state);
-		}
-
-		void undo (State *state) {
-			if (next)
-				next->undo (state);
-			move (state, pushable_x + inc_x, pushable_y + inc_y, pushable_x, pushable_y);
-		}
-	};
-
-	struct DoorToggleAction : Action {
-		int door_x, door_y;
-
-		DoorToggleAction (int door_x, int door_y) : door_x (door_x), door_y (door_y) {}
-
-		void apply (State *state) {
-			state->map->get_cell (door_x, door_y)->toggle ();
-			if (next)
-				next->apply (state);
-		}
-
-		void undo (State *state) {
-			DoorCell *door = (DoorCell *)state->map->get_cell (door_x, door_y);
-			if (next)
-				next->undo (state);
-			door->toggle ();
-		}
-	};
-
-	Action *TrapCell::pass (Map *map, int incoming_dir) {
-		return new CassAction (0, 0, true, false);
-	}
-
-	Action *PushableBlockCell::pass (Map *map, int incoming_dir) {
-		Action *action;
-
-		action = new PushAction (map, x, y, dirs[incoming_dir][0], dirs[incoming_dir][1]);
-		action->add (block_below->pass (map, incoming_dir));
-
-		return action;
-	}
-
-	Action *TriggerCell::pass (Map *map, int incoming_dir) {
-		return new DoorToggleAction (door_x, door_y);
-	}
-
-	Action *GoalCell::pass (Map *map, int incoming_dir) {
-		return new CassAction (0, 0, false, true);
-	}
 
 	Map::~Map () {
 		for (int x = 0; x < sizex; x++) {
@@ -348,9 +247,8 @@ namespace Game1 {
 		return false;
 	}
 
-	Action *State::input (Input input_code) const {
+	void State::input (Input input_code) {
 		int dir = -1;
-		Action *action = NULL;
 		switch (input_code) {
 		case UP:
 			dir = 0;
@@ -369,15 +267,10 @@ namespace Game1 {
 			int new_x = cass.x + dirs[dir][0];
 			int new_y = cass.y + dirs[dir][1];
 			if (map->get_cell (new_x, new_y)->can_pass (map, dir)) {
-				action = new CassAction (dirs[dir][0], dirs[dir][1], false, false);
-				action->add (map->get_cell (new_x, new_y)->pass (map, dir));
+				cass.x = new_x;
+				cass.y = new_y;
+				map->get_cell (new_x, new_y)->pass (this, dir);
 			}
 		}
-
-		return action;
 	}
-
-
-
-
 }

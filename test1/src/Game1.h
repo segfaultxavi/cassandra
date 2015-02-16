@@ -15,7 +15,6 @@ namespace Game1 {
 	};
 
 	struct Player;
-	struct Action;
 	struct Cell;
 	struct EmptyCell;
 	struct WallCell;
@@ -80,7 +79,7 @@ namespace Game1 {
 		virtual Cell *clone () const = 0;
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
-		virtual Action *pass (Map *map, int incoming_dir) { return NULL; };
+		virtual void pass (State *state, int incoming_dir) {};
 		virtual bool is_hole () const { return false; }
 		virtual void toggle () {}
 
@@ -92,28 +91,6 @@ namespace Game1 {
 		virtual bool equals (const DoorCell *cell) const { return false; }
 		virtual bool equals (const TriggerCell *cell) const { return false; }
 		virtual bool equals (const GoalCell *cell) const { return false; }
-	};
-
-	struct Action {
-		Action *next;
-
-		Action () : next (NULL) {}
-
-		virtual ~Action () {
-			if (next) {
-				delete next;
-			}
-		}
-
-		virtual void apply (State *state) = 0;
-		virtual void undo (State *state) = 0;
-
-		void add (Action *new_action) {
-			if (!next)
-				next = new_action;
-			else
-				next->add (new_action);
-		}
 	};
 
 	struct State : Cass::State {
@@ -153,7 +130,7 @@ namespace Game1 {
 		}
 
 		bool can_input (Input input_code) const;
-		Action *input (Input input_code) const;
+		void input (Input input_code);
 
 		//
 		// Cassandra Interface
@@ -172,13 +149,11 @@ namespace Game1 {
 		}
 
 		virtual State *get_transition (int i) const {
-			Action *action = input ((Input)i);
-			if (!action)
+			if (!can_input ((Input)i))
 				return NULL;
 
 			State *new_state = clone ();
-			action->apply (new_state);
-			delete action;
+			new_state->input ((Input)i);
 			return new_state;
 		}
 

@@ -198,11 +198,8 @@ int main (int argc, char *argv[]) {
 				break;
 			}
 			if (input != Game1::Input::NONE) {
-				Game1::Action *action = current_state->input (input);
-				if (action) {
-					action->apply (current_state);
-					delete action;
-
+				if (current_state->can_input (input)) {
+					current_state->input (input);
 					solver->update (input);
 					solver->calc_view_state ();
 					anim_step = 0;
