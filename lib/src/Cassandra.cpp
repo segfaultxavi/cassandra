@@ -211,7 +211,7 @@ namespace Cass {
 		}
 
 		void add_start_point (State *state) {
-			current_node = add_node (state);
+			current_node = add_node (state->clone ());
 		}
 
 		// Process the node at the head of the incomplete nodes list, and add

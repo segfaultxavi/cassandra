@@ -14,17 +14,8 @@ namespace Game1 {
 		NONE
 	};
 
-	struct Player;
-	struct Cell;
-	struct EmptyCell;
-	struct WallCell;
-	struct TrapCell;
-	struct DoorCell;
-	struct TriggerCell;
-	struct PushableBlockCell;
-	struct GoalCell;
-	struct State;
-
+	// Applications must point the global pointer below to an instance of this interface in order
+	// to have render.
 	class Renderer {
 	public:
 		virtual void renderPlayer (int x, int y, bool dead, bool won, float alpha) = 0;
@@ -39,140 +30,25 @@ namespace Game1 {
 
 	extern Renderer *g_renderer;
 
-	struct Player {
-		int x, y;
-		bool dead;
-		bool won;
-
-		bool equals (const Player *other) {
-			return x == other->x && y == other->y && dead == other->dead && won == other->won;
-		}
-	};
-
-	struct Map {
-		Map (int sizex, int sizey) : sizex (sizex), sizey (sizey) {
-			cells = new Cell*[sizex * sizey];
-		}
-
-		~Map ();
-
-		int get_sizex () const { return sizex; }
-		int get_sizey () const { return sizey; }
-		Cell *get_cell (int x, int y) { return cells[x * sizey + y]; }
-		const Cell *get_cell (int x, int y) const { return cells[x * sizey + y]; }
-		void set_cell (int x, int y, Cell *c) { cells[x * sizey + y] = c; }
-
-	private:
-		int sizex;
-		int sizey;
-		Cell **cells;
-	};
-
-	struct Cell {
-		int x, y;
-
-		Cell (int x, int y) : x (x), y (y) {}
-
-		virtual ~Cell () {}
-
-		virtual void render (float alpha) const = 0;
-		virtual Cell *clone () const = 0;
-
-		virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
-		virtual void pass (State *state, int incoming_dir) {};
-		virtual bool is_hole () const { return false; }
-		virtual void toggle () {}
-
-		virtual bool equals (const Cell *cell) const = 0;
-		virtual bool equals (const EmptyCell *cell) const { return false; }
-		virtual bool equals (const WallCell *cell) const { return false; }
-		virtual bool equals (const TrapCell *cell) const { return false; }
-		virtual bool equals (const PushableBlockCell *cell) const { return false; }
-		virtual bool equals (const DoorCell *cell) const { return false; }
-		virtual bool equals (const TriggerCell *cell) const { return false; }
-		virtual bool equals (const GoalCell *cell) const { return false; }
-	};
-
-	struct State : Cass::State {
-		Player cass;
-		Map *map;
-
+	// This represents the game state. Applications use this interface to interact with the game.
+	class State : public Cass::State {
+	public:
 		State (const char *filename);
-		State (int map_sizex, int map_sizey) {
-			map = new Map (map_sizex, map_sizey);
-		}
-		~State ();
+		State () {}
+		virtual ~State () {}
 
-		void render (float alpha, const State *current = NULL) {
-			for (int x = 0; x < map->get_sizex (); x++) {
-				for (int y = 0; y < map->get_sizey (); y++) {
-					if (current && map->get_cell (x, y)->equals (current->map->get_cell (x, y)))
-						continue;
-					map->get_cell (x, y)->render (alpha);
-				}
-			}
+		virtual int get_map_size_x () = 0;
+		virtual int get_map_size_y () = 0;
 
-			if (current && cass.equals (&current->cass))
-				return;
-			g_renderer->renderPlayer (cass.x, cass.y, cass.dead, cass.won, alpha);
-		}
+		virtual void render (float alpha) = 0;
 
-		State *clone () const {
-			State *new_state = new State (map->get_sizex (), map->get_sizey ());
-			for (int x = 0; x < map->get_sizex (); x++) {
-				for (int y = 0; y < map->get_sizey (); y++) {
-					new_state->map->set_cell (x, y, map->get_cell (x, y)->clone ());
-				}
-			}
-			new_state->cass = cass;
+		virtual bool can_input (Input input_code) const = 0;
+		virtual void input (Input input_code) = 0;
 
-			return new_state;
-		}
-
-		bool can_input (Input input_code) const;
-		void input (Input input_code);
-
-		//
-		// Cassandra Interface
-		//
-		virtual bool equals (const Cass::State *virt_other) const {
-			const State *other = (const State *)virt_other;
-			int x, y;
-			for (x = 0; x < map->get_sizex (); x++) {
-				for (y = 0; y < map->get_sizey (); y++) {
-					const Cell *cell = map->get_cell (x, y);
-					const Cell *other_cell = other->map->get_cell (x, y);
-					if (!cell->equals (other_cell)) return false;
-				}
-			}
-			return true;
-		}
-
-		virtual State *get_transition (int i) const {
-			if (!can_input ((Input)i))
-				return NULL;
-
-			State *new_state = clone ();
-			new_state->input ((Input)i);
-			return new_state;
-		}
-
-		virtual Hash get_hash () const {
-			return cass.x + map->get_sizex () * cass.y;
-		}
-
-		virtual bool has_won () const {
-			return cass.won;
-		}
-
-		virtual void render_ghosts (Cass::State::Progress progress, const Cass::State *current) {
-			if (progress == Cass::State::DEAD_END)
-				return;
-			render (progress == Cass::State::GOAL ? 1.0f : 0.25f, (State *)current);
-		}
+		virtual Cass::Solver *get_solver () = 0;
 	};
 
-
+	State *load_state (const char *filename);
 }
 
 #endif

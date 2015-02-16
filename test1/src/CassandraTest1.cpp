@@ -135,12 +135,12 @@ int main (int argc, char *argv[]) {
 
 	int max_depth = 6;
 	bool show_ghosts = true;
-	Game1::State *current_state = new Game1::State ("..\\map1.txt");
-	Cass::Solver *solver = Cass::get_solver (current_state->map->get_sizex () * current_state->map->get_sizey (), Game1::NUM_INPUTS);
-	solver->add_start_point (current_state->clone ());
+	Game1::State *current_state = Game1::load_state ("..\\map1.txt");
+	Cass::Solver *solver = current_state->get_solver ();
+	solver->add_start_point (current_state);
 
-	cell_width = SCREEN_WIDTH / current_state->map->get_sizex ();
-	cell_height = SCREEN_HEIGHT / current_state->map->get_sizey ();
+	cell_width = SCREEN_WIDTH / current_state->get_map_size_x ();
+	cell_height = SCREEN_HEIGHT / current_state->get_map_size_y ();
 
 	SDL_Event e;
 	bool quit = false;

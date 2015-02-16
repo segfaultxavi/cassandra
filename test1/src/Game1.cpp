@@ -17,6 +17,165 @@ namespace Game1 {
 
 	static const int dirs[4][2] = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } };
 	
+	class StateImplementation;
+	struct Cell;
+	struct EmptyCell;
+	struct WallCell;
+	struct TrapCell;
+	struct DoorCell;
+	struct TriggerCell;
+	struct PushableBlockCell;
+	struct GoalCell;
+
+	struct Player {
+		int x, y;
+		bool dead;
+		bool won;
+
+		bool equals (const Player *other) {
+			return x == other->x && y == other->y && dead == other->dead && won == other->won;
+		}
+	};
+
+	struct Map {
+		Map (int sizex, int sizey) : sizex (sizex), sizey (sizey) {
+			cells = new Cell*[sizex * sizey];
+		}
+
+		~Map ();
+
+		int get_sizex () const { return sizex; }
+		int get_sizey () const { return sizey; }
+		Cell *get_cell (int x, int y) { return cells[x * sizey + y]; }
+		const Cell *get_cell (int x, int y) const { return cells[x * sizey + y]; }
+		void set_cell (int x, int y, Cell *c) { cells[x * sizey + y] = c; }
+
+	private:
+		int sizex;
+		int sizey;
+		Cell **cells;
+	};
+
+	struct Cell {
+		int x, y;
+
+		Cell (int x, int y) : x (x), y (y) {}
+
+		virtual ~Cell () {}
+
+		virtual void render (float alpha) const = 0;
+		virtual Cell *clone () const = 0;
+
+		virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
+		virtual void pass (StateImplementation *state, int incoming_dir) {};
+		virtual bool is_hole () const { return false; }
+		virtual void toggle () {}
+
+		virtual bool equals (const Cell *cell) const = 0;
+		virtual bool equals (const EmptyCell *cell) const { return false; }
+		virtual bool equals (const WallCell *cell) const { return false; }
+		virtual bool equals (const TrapCell *cell) const { return false; }
+		virtual bool equals (const PushableBlockCell *cell) const { return false; }
+		virtual bool equals (const DoorCell *cell) const { return false; }
+		virtual bool equals (const TriggerCell *cell) const { return false; }
+		virtual bool equals (const GoalCell *cell) const { return false; }
+	};
+
+	class StateImplementation : public State {
+		Player cass;
+		Map *map;
+
+	public:
+		StateImplementation (const char *filename);
+		StateImplementation (int map_sizex, int map_sizey) {
+			map = new Map (map_sizex, map_sizey);
+		}
+		~StateImplementation ();
+
+		void render (float alpha) {
+			render (alpha, NULL);
+		}
+
+		bool can_input (Input input_code) const;
+		void input (Input input_code);
+
+		Player *get_cass () { return &cass; }
+		Map *get_map () { return map; }
+
+		int get_map_size_x () { return map->get_sizex (); }
+		int get_map_size_y () { return map->get_sizey (); }
+
+		Cass::Solver *get_solver () {
+			return Cass::get_solver (get_map_size_x () * get_map_size_y (), NUM_INPUTS);
+		}
+
+	private:
+		void render (float alpha, const StateImplementation *current = NULL) {
+			for (int x = 0; x < map->get_sizex (); x++) {
+				for (int y = 0; y < map->get_sizey (); y++) {
+					if (current && map->get_cell (x, y)->equals (current->map->get_cell (x, y)))
+						continue;
+					map->get_cell (x, y)->render (alpha);
+				}
+			}
+
+			if (current && cass.equals (&current->cass))
+				return;
+			g_renderer->renderPlayer (cass.x, cass.y, cass.dead, cass.won, alpha);
+		}
+
+		//
+		// Cassandra Interface
+		//
+		virtual bool equals (const Cass::State *virt_other) const {
+			const StateImplementation *other = (const StateImplementation *)virt_other;
+			int x, y;
+			for (x = 0; x < map->get_sizex (); x++) {
+				for (y = 0; y < map->get_sizey (); y++) {
+					const Cell *cell = map->get_cell (x, y);
+					const Cell *other_cell = other->map->get_cell (x, y);
+					if (!cell->equals (other_cell)) return false;
+				}
+			}
+			return true;
+		}
+
+		StateImplementation *clone () const {
+			StateImplementation *new_state = new StateImplementation (map->get_sizex (), map->get_sizey ());
+			for (int x = 0; x < map->get_sizex (); x++) {
+				for (int y = 0; y < map->get_sizey (); y++) {
+					new_state->map->set_cell (x, y, map->get_cell (x, y)->clone ());
+				}
+			}
+			new_state->cass = cass;
+
+			return new_state;
+		}
+
+		virtual Cass::State *get_transition (int i) const {
+			if (!can_input ((Input)i))
+				return NULL;
+
+			StateImplementation *new_state = clone ();
+			new_state->input ((Input)i);
+			return new_state;
+		}
+
+		virtual Hash get_hash () const {
+			return cass.x + map->get_sizex () * cass.y;
+		}
+
+		virtual bool has_won () const {
+			return cass.won;
+		}
+
+		virtual void render_ghosts (Cass::State::Progress progress, const Cass::State *current) {
+			if (progress == Cass::State::DEAD_END)
+				return;
+			render (progress == Cass::State::GOAL ? 1.0f : 0.25f, (StateImplementation *)current);
+		}
+	};
+
 	struct EmptyCell : Cell {
 		EmptyCell (int x, int y) : Cell (x, y) {}
 		virtual void render (float alpha) const { g_renderer->renderEmptyCell (x, y, alpha); }
@@ -45,8 +204,8 @@ namespace Game1 {
 		virtual bool equals (const TrapCell *cell) const { return true; }
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
-		virtual void pass (State *state, int incoming_dir){
-			state->cass.dead = true;
+		virtual void pass (StateImplementation *state, int incoming_dir){
+			state->get_cass()->dead = true;
 		}
 
 		virtual bool is_hole () const { return true; }
@@ -83,21 +242,21 @@ namespace Game1 {
 			return (map->get_cell (newx, newy)->can_pass (map, incoming_dir));
 		}
 
-		virtual void pass (State *state, int incoming_dir) {
+		virtual void pass (StateImplementation *state, int incoming_dir) {
 			int newx = x + dirs[incoming_dir][0];
 			int newy = y + dirs[incoming_dir][1];
 
-			if (state->map->get_cell (newx, newy)->is_hole ()) {
-				delete state->map->get_cell (newx, newy);
-				state->map->set_cell (x, y, new EmptyCell (x, y));
-				state->map->set_cell (newx, newy, new EmptyCell (newx, newy));
+			if (state->get_map ()->get_cell (newx, newy)->is_hole ()) {
+				delete state->get_map ()->get_cell (newx, newy);
+				state->get_map ()->set_cell (x, y, new EmptyCell (x, y));
+				state->get_map ()->set_cell (newx, newy, new EmptyCell (newx, newy));
 				delete this;
 				return;
 			}
 
-			Cell *new_below = state->map->get_cell (newx, newy);
-			state->map->set_cell (newx, newy, this);
-			state->map->set_cell (x, y, block_below);
+			Cell *new_below = state->get_map ()->get_cell (newx, newy);
+			state->get_map ()->set_cell (newx, newy, this);
+			state->get_map ()->set_cell (x, y, block_below);
 			block_below = new_below;
 			x = newx;
 			y = newy;
@@ -130,8 +289,8 @@ namespace Game1 {
 		virtual bool equals (const TriggerCell *cell) const { return true; }
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
-		virtual void pass (State *state, int incoming_dir) {
-			state->map->get_cell (door_x, door_y)->toggle ();
+		virtual void pass (StateImplementation *state, int incoming_dir) {
+			state->get_map ()->get_cell (door_x, door_y)->toggle ();
 		}
 	};
 
@@ -143,8 +302,8 @@ namespace Game1 {
 		virtual bool equals (const GoalCell *cell) const { return true; }
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
-		virtual void pass (State *state, int incoming_dir) {
-			state->cass.won = true;
+		virtual void pass (StateImplementation *state, int incoming_dir) {
+			state->get_cass ()->won = true;
 		}
 	};
 
@@ -157,7 +316,7 @@ namespace Game1 {
 		delete cells;
 	}
 
-	State::State (const char *filename) {
+	StateImplementation::StateImplementation (const char *filename) {
 		FILE *f;
 		int width, height;
 		char *textmap;
@@ -220,10 +379,11 @@ namespace Game1 {
 		cass.won = false;
 	}
 
-	State::~State () {
+	StateImplementation::~StateImplementation () {
 		delete map;
 	}
-	bool State::can_input (Input input_code) const {
+
+	bool StateImplementation::can_input (Input input_code) const {
 		int dir = -1;
 		switch (input_code) {
 		case UP:
@@ -247,7 +407,7 @@ namespace Game1 {
 		return false;
 	}
 
-	void State::input (Input input_code) {
+	void StateImplementation::input (Input input_code) {
 		int dir = -1;
 		switch (input_code) {
 		case UP:
@@ -272,5 +432,10 @@ namespace Game1 {
 				map->get_cell (new_x, new_y)->pass (this, dir);
 			}
 		}
+	}
+
+	State *load_state (const char *filename) {
+		StateImplementation *state = new StateImplementation (filename);
+		return state;
 	}
 }

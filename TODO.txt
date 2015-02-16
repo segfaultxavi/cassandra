@@ -1,14 +1,13 @@
 Cassandra library:
 - This is starting to be too slow:
   - Build a console test using Game so we can start profiling
-  - Use lightweight State Diffs as clones
+  - Use lightweight State Diffs as clones (add param to clone() to specify deep clone)
 - Limit the depth of scanning, so the goal is only found when you are _close_ to it. This saves memory too, of course.
 - Process first nodes in the incomplete list closer to the Player -> Does the algorithm still hold?
   We have assumed that unprocessed nodes are always further away.
 - Do not show GOAL at all?
 - Only show one ghost at a time so it is less confusing?
 - Fix overlapping ghosts.
-- Do we need the Action class? we are never undoing them now that we do not recurse.
 
 Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
 - Render blocks only when in LOS (or render darker)

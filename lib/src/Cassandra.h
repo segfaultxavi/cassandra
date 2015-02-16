@@ -15,6 +15,7 @@ namespace Cass {
 
 		virtual ~State () {}
 		virtual bool equals (const State *other) const = 0;
+		virtual State *clone () const = 0;
 		virtual State *get_transition (int i) const = 0;
 		virtual Hash get_hash () const = 0;
 		virtual bool has_won () const = 0;
