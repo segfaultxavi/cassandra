@@ -23,31 +23,40 @@ extern unsigned char tiles_data[];
 int tiles_width, tiles_height;
 int cell_width, cell_height;
 
-void Game1::render_tile_func (int x, int y, Game1::TileType type, float alpha) {
-	static const int tiles[][2] = {
-		{ 4, 0 }, // PLAYER_ALIVE
-		{ 8, 3 }, // PLAYER_DEAD
-		{ 9, 0 }, // PLAYER_WON
-		{ 2, 6 }, // EMPTY
-		{ 0, 5 }, // WALL
-		{ 3, 2 }, // TRAP
-		{ 4, 5 }, // DOOR_OPEN
-		{ 3, 5 }, // DOOR_CLOSED
-		{ 2, 2 }, // TRIGGER
-		{ 2, 9 }, // PUSHABLE_BLOCK
-		{ 0, 2 }, // GOAL
-	};
+Game1::Renderer *Game1::g_renderer;
 
-	glColor4f (1.f, 1.f, 1.f, alpha);
-	glBegin (GL_TRIANGLE_STRIP);
-	for (int sx = 0; sx < 2; sx++) {
-		for (int sy = 0; sy < 2; sy++) {
-			glTexCoord2f ((tiles[type][0] + sx) * 32 / (GLfloat)tiles_width, (tiles[type][1] + sy) * 32 / (GLfloat)tiles_height);
-			glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
+class Renderer : public Game1::Renderer {
+	void render_tile (int x, int y, int tilex, int tiley, float alpha) {
+		glColor4f (1.f, 1.f, 1.f, alpha);
+		glBegin (GL_TRIANGLE_STRIP);
+		for (int sx = 0; sx < 2; sx++) {
+			for (int sy = 0; sy < 2; sy++) {
+				glTexCoord2f ((tilex + sx) * 32 / (GLfloat)tiles_width, (tiley + sy) * 32 / (GLfloat)tiles_height);
+				glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
+			}
 		}
+		glEnd ();
 	}
-	glEnd ();
-}
+
+public:
+	void renderPlayer (int x, int y, bool dead, bool won, float alpha) {
+		if (dead) render_tile (x, y, 8, 3, alpha);
+		else
+		if (won) render_tile (x, y, 9, 0, alpha);
+		else
+		render_tile (x, y, 4, 0, alpha);
+	}
+	void renderEmptyCell (int x, int y, float alpha) { render_tile (x, y, 2, 6, alpha); }
+	void renderWallCell (int x, int y, float alpha)  { render_tile (x, y, 0, 5, alpha); }
+	void renderTrapCell (int x, int y, float alpha)  { render_tile (x, y, 3, 2, alpha); }
+	void renderDoorCell (int x, int y, bool open, float alpha)  {
+		if (open) render_tile (x, y, 4, 5, alpha);
+		else render_tile (x, y, 3, 5, alpha);
+	}
+	void renderTriggerCell (int x, int y, float alpha)  { render_tile (x, y, 2, 2, alpha); }
+	void renderPushableBlockCell (int x, int y, float alpha)  { render_tile (x, y, 2, 9, alpha); }
+	void renderGoalCell (int x, int y, float alpha)  { render_tile (x, y, 0, 2, alpha); }
+};
 
 int main (int argc, char *argv[]) {
 	_CrtSetDbgFlag (_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
@@ -120,6 +129,9 @@ int main (int argc, char *argv[]) {
 	glEnable (GL_TEXTURE_2D);
 	glEnable (GL_BLEND);
 	glBlendFunc (GL_SRC_ALPHA, GL_ONE);
+
+	Renderer renderer;
+	Game1::g_renderer = &renderer;
 
 	int max_depth = 6;
 	bool show_ghosts = true;

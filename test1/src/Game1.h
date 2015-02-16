@@ -14,22 +14,7 @@ namespace Game1 {
 		NONE
 	};
 
-	enum TileType {
-		PLAYER_ALIVE,
-		PLAYER_DEAD,
-		PLAYER_WON,
-		EMPTY,
-		WALL,
-		TRAP,
-		DOOR_OPEN,
-		DOOR_CLOSED,
-		TRIGGER,
-		PUSHABLE_BLOCK,
-		GOAL
-	};
-
-	void render_tile_func (int x, int y, TileType type, float alpha);
-
+	struct Player;
 	struct Action;
 	struct Cell;
 	struct EmptyCell;
@@ -40,6 +25,20 @@ namespace Game1 {
 	struct PushableBlockCell;
 	struct GoalCell;
 	struct State;
+
+	class Renderer {
+	public:
+		virtual void renderPlayer (int x, int y, bool dead, bool won, float alpha) = 0;
+		virtual void renderEmptyCell (int x, int y, float alpha) = 0;
+		virtual void renderWallCell (int x, int y, float alpha) = 0;
+		virtual void renderTrapCell (int x, int y, float alpha) = 0;
+		virtual void renderDoorCell (int x, int y, bool open, float alpha) = 0;
+		virtual void renderTriggerCell (int x, int y, float alpha) = 0;
+		virtual void renderPushableBlockCell (int x, int y, float alpha) = 0;
+		virtual void renderGoalCell (int x, int y, float alpha) = 0;
+	};
+
+	extern Renderer *g_renderer;
 
 	struct Player {
 		int x, y;
@@ -77,7 +76,7 @@ namespace Game1 {
 
 		virtual ~Cell () {}
 
-		virtual TileType type () const = 0;
+		virtual void render (float alpha) const = 0;
 		virtual Cell *clone () const = 0;
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
@@ -132,13 +131,13 @@ namespace Game1 {
 				for (int y = 0; y < map->get_sizey (); y++) {
 					if (current && map->get_cell (x, y)->equals (current->map->get_cell (x, y)))
 						continue;
-					render_tile_func (x, y, map->get_cell (x, y)->type (), alpha);
+					map->get_cell (x, y)->render (alpha);
 				}
 			}
 
 			if (current && cass.equals (&current->cass))
 				return;
-			render_tile_func (cass.x, cass.y, cass.dead ? TileType::PLAYER_DEAD : cass.won ? TileType::PLAYER_WON : TileType::PLAYER_ALIVE, alpha);
+			g_renderer->renderPlayer (cass.x, cass.y, cass.dead, cass.won, alpha);
 		}
 
 		State *clone () const {

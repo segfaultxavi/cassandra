@@ -19,7 +19,7 @@ namespace Game1 {
 	
 	struct EmptyCell : Cell {
 		EmptyCell (int x, int y) : Cell (x, y) {}
-		TileType type () const { return TileType::EMPTY; }
+		virtual void render (float alpha) const { g_renderer->renderEmptyCell (x, y, alpha); }
 		Cell *clone () const { return new EmptyCell (x, y); }
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const EmptyCell *cell) const { return true; }
@@ -29,7 +29,7 @@ namespace Game1 {
 
 	struct WallCell : Cell {
 		WallCell (int x, int y) : Cell (x, y) {}
-		TileType type () const { return TileType::WALL; }
+		virtual void render (float alpha) const { g_renderer->renderWallCell (x, y, alpha); }
 		Cell *clone () const { return new WallCell (x, y); }
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const WallCell *cell) const { return true; }
@@ -39,7 +39,7 @@ namespace Game1 {
 
 	struct TrapCell : Cell {
 		TrapCell (int x, int y) : Cell (x, y) {}
-		TileType type () const { return TileType::TRAP; }
+		virtual void render (float alpha) const { g_renderer->renderTrapCell (x, y, alpha); }
 		Cell *clone () const { return new TrapCell (x, y); }
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const TrapCell *cell) const { return true; }
@@ -62,7 +62,7 @@ namespace Game1 {
 				delete block_below;
 		}
 
-		TileType type () const { return TileType::PUSHABLE_BLOCK; }
+		virtual void render (float alpha) const { g_renderer->renderPushableBlockCell (x, y, alpha); }
 
 		Cell *clone () const {
 			return new PushableBlockCell (x, y, block_below->clone ());
@@ -88,7 +88,7 @@ namespace Game1 {
 		bool open;
 
 		DoorCell (int x, int y, bool open) : Cell (x, y), open (open) {}
-		TileType type () const { return open ? TileType::DOOR_OPEN : TileType::DOOR_CLOSED; }
+		virtual void render (float alpha) const { g_renderer->renderDoorCell (x, y, open, alpha); }
 		Cell *clone () const { return new DoorCell (x, y, open); }
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const DoorCell *cell) const { return open == cell->open; }
@@ -104,7 +104,7 @@ namespace Game1 {
 		int door_x, door_y;
 
 		TriggerCell (int x, int y, int door_x, int door_y) : Cell (x, y), door_x (door_x), door_y (door_y) {}
-		TileType type () const { return TileType::TRIGGER; }
+		virtual void render (float alpha) const { g_renderer->renderTriggerCell (x, y, alpha); }
 		Cell *clone () const { return new TriggerCell (x, y, door_x, door_y); }
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const TriggerCell *cell) const { return true; }
@@ -115,7 +115,7 @@ namespace Game1 {
 
 	struct GoalCell : Cell {
 		GoalCell (int x, int y) : Cell (x, y) {}
-		TileType type () const { return TileType::GOAL; }
+		virtual void render (float alpha) const { g_renderer->renderGoalCell (x, y, alpha); }
 		Cell *clone () const { return new GoalCell (x, y); }
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const GoalCell *cell) const { return true; }

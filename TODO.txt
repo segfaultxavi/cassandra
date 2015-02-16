@@ -9,7 +9,6 @@ Cassandra library:
 - Only show one ghost at a time so it is less confusing?
 - Fix overlapping ghosts.
 - Do we need the Action class? we are never undoing them now that we do not recurse.
-- Having both the TileType and the double-dispatcher is ugly...
 
 Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
 - Render blocks only when in LOS (or render darker)
