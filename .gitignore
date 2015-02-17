@@ -2,3 +2,9 @@ bin
 *.suo
 *.sdf
 *.opensdf
+Makefile
+Makefile.in
+configure
+config.log
+config.status
+.deps
