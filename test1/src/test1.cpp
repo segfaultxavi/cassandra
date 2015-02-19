@@ -3,6 +3,7 @@
 #include <time.h>
 
 #ifdef _WIN32
+
 # include <Windows.h>
 # include <psapi.h>
 
@@ -13,7 +14,21 @@ unsigned int used_memory () {
 }
 
 #else
-# include <sys/sysinfo.h>
+
+# include <unistd.h>
+
+unsigned int used_memory () {
+	size_t size = 0;
+    FILE *file = fopen("/proc/self/statm", "r");
+    if (file) {
+        unsigned long vm = 0;
+        fscanf (file, "%ld", &vm);
+        fclose (file);
+       size = (size_t)vm * getpagesize();
+    }
+    return size;
+}
+
 #endif
 
 Game1::Renderer *Game1::g_renderer;
