@@ -102,7 +102,9 @@ namespace Game1 {
 		void input (Input input_code);
 
 		Player *get_cass () { return &cass; }
-		Map *get_map () { return map; }
+		Cell *get_cell (int x, int y) { return map->get_cell (x, y); }
+		const Cell *get_cell (int x, int y) const { return map->get_cell (x, y); }
+		void set_cell (int x, int y, Cell *c) { map->set_cell (x, y, c); }
 
 		int get_map_size_x () { return map->get_sizex (); }
 		int get_map_size_y () { return map->get_sizey (); }
@@ -248,17 +250,17 @@ namespace Game1 {
 			int newx = x + dirs[incoming_dir][0];
 			int newy = y + dirs[incoming_dir][1];
 
-			if (state->get_map ()->get_cell (newx, newy)->is_hole ()) {
-				delete state->get_map ()->get_cell (newx, newy);
-				state->get_map ()->set_cell (x, y, new EmptyCell (x, y));
-				state->get_map ()->set_cell (newx, newy, new EmptyCell (newx, newy));
+			if (state->get_cell (newx, newy)->is_hole ()) {
+				delete state->get_cell (newx, newy);
+				state->set_cell (x, y, new EmptyCell (x, y));
+				state->set_cell (newx, newy, new EmptyCell (newx, newy));
 				delete this;
 				return;
 			}
 
-			Cell *new_below = state->get_map ()->get_cell (newx, newy);
-			state->get_map ()->set_cell (newx, newy, this);
-			state->get_map ()->set_cell (x, y, block_below);
+			Cell *new_below = state->get_cell (newx, newy);
+			state->set_cell (newx, newy, this);
+			state->set_cell (x, y, block_below);
 			block_below = new_below;
 			x = newx;
 			y = newy;
@@ -292,7 +294,7 @@ namespace Game1 {
 
 		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
 		virtual void pass (StateImplementation *state, int incoming_dir) {
-			state->get_map ()->get_cell (door_x, door_y)->toggle ();
+			state->get_cell (door_x, door_y)->toggle ();
 		}
 	};
 
