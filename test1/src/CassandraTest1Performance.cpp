@@ -74,4 +74,6 @@ int main (int argc, char *argv[]) {
 
 	delete current_state;
 	delete solver;
+
+	getchar ();
 }

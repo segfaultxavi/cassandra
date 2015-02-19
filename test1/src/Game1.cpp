@@ -325,12 +325,12 @@ namespace Game1 {
 
 		f = fopen (filename, "rt");
 		if (!f) {
-			printf ("Could not open %s", filename);
-			return;
+			printf ("Could not open %s\n", filename);
+			throw 0;
 		}
 		if (fscanf (f, "%d,%d\n", &width, &height) != 2) {
-			printf ("Could not read map width & height from file");
-			return;
+			printf ("Could not read map width & height from file\n");
+			throw 0;
 		}
 		map = new Map (width, height);
 
@@ -437,7 +437,13 @@ namespace Game1 {
 	}
 
 	State *load_state (const char *filename) {
-		StateImplementation *state = new StateImplementation (filename);
+		StateImplementation *state = NULL;
+		try {
+			state = new StateImplementation (filename);
+		}
+		catch (...) {
+			state = NULL;
+		}
 		return state;
 	}
 }
