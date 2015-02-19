@@ -8,3 +8,10 @@ configure
 config.log
 config.status
 .deps
+.c9/
+aclocal.m4
+autom4te.cache
+compile
+depcomp
+install-sh
+missing
