@@ -37,8 +37,8 @@ namespace Game1 {
 		State () {}
 		virtual ~State () {}
 
-		virtual int get_map_size_x () = 0;
-		virtual int get_map_size_y () = 0;
+		virtual int get_map_size_x () const = 0;
+		virtual int get_map_size_y () const = 0;
 
 		virtual void render (float alpha) = 0;
 

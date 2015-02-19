@@ -34,7 +34,7 @@ namespace Game1 {
 		bool dead;
 		bool won;
 
-		bool equals (const Player *other) {
+		bool equals (const Player *other) const {
 			return x == other->x && y == other->y && dead == other->dead && won == other->won;
 		}
 	};
@@ -42,6 +42,7 @@ namespace Game1 {
 	struct Map {
 		Map (int sizex, int sizey) : sizex (sizex), sizey (sizey) {
 			cells = new Cell*[sizex * sizey];
+			memset (cells, 0, sizex * sizey * sizeof (Cell *));
 		}
 
 		~Map ();
@@ -68,7 +69,7 @@ namespace Game1 {
 		virtual void render (float alpha) const = 0;
 		virtual Cell *clone () const = 0;
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const = 0;
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const = 0;
 		virtual void pass (StateImplementation *state, int incoming_dir) {};
 		virtual bool is_hole () const { return false; }
 		virtual void toggle () {}
@@ -85,12 +86,14 @@ namespace Game1 {
 
 	class StateImplementation : public State {
 		Player cass;
-		Map *map;
+		Map *diffmap;
+		const StateImplementation *original;
 
 	public:
 		StateImplementation (const char *filename);
-		StateImplementation (int map_sizex, int map_sizey) {
-			map = new Map (map_sizex, map_sizey);
+		StateImplementation (const StateImplementation *original) {
+			this->original = original;
+			diffmap = new Map (original->get_map_size_x (), original->get_map_size_y ());
 		}
 		~StateImplementation ();
 
@@ -102,24 +105,39 @@ namespace Game1 {
 		void input (Input input_code);
 
 		Player *get_cass () { return &cass; }
-		Cell *get_cell (int x, int y) { return map->get_cell (x, y); }
-		const Cell *get_cell (int x, int y) const { return map->get_cell (x, y); }
-		void set_cell (int x, int y, Cell *c) { map->set_cell (x, y, c); }
 
-		int get_map_size_x () { return map->get_sizex (); }
-		int get_map_size_y () { return map->get_sizey (); }
+		Cell *get_cell (int x, int y) {
+			Cell *cell = diffmap->get_cell (x, y);
+			if (cell) return cell;
+			cell = original->get_cell (x, y)->clone ();
+			diffmap->set_cell (x, y, cell);
+			return cell;
+		}
+
+		const Cell *get_cell (int x, int y) const {
+			const Cell *cell = diffmap->get_cell (x, y);
+			if (cell) return cell;
+			return original->get_cell (x, y);
+		}
+
+		void set_cell (int x, int y, Cell *c) {
+			diffmap->set_cell (x, y, c);
+		}
+
+		int get_map_size_x () const { return diffmap->get_sizex (); }
+		int get_map_size_y () const { return diffmap->get_sizey (); }
 
 		Cass::Solver *get_solver () {
 			return Cass::get_solver (get_map_size_x () * get_map_size_y (), NUM_INPUTS);
 		}
 
 	private:
-		void render (float alpha, const StateImplementation *current = NULL) {
-			for (int x = 0; x < map->get_sizex (); x++) {
-				for (int y = 0; y < map->get_sizey (); y++) {
-					if (current && map->get_cell (x, y)->equals (current->map->get_cell (x, y)))
+		void render (float alpha, const StateImplementation *current = NULL) const {
+			for (int x = 0; x < get_map_size_x (); x++) {
+				for (int y = 0; y < get_map_size_y (); y++) {
+					if (current && get_cell (x, y)->equals (current->get_cell (x, y)))
 						continue;
-					map->get_cell (x, y)->render (alpha);
+					get_cell (x, y)->render (alpha);
 				}
 			}
 
@@ -133,11 +151,10 @@ namespace Game1 {
 		//
 		virtual bool equals (const Cass::State *virt_other) const {
 			const StateImplementation *other = (const StateImplementation *)virt_other;
-			int x, y;
-			for (x = 0; x < map->get_sizex (); x++) {
-				for (y = 0; y < map->get_sizey (); y++) {
-					const Cell *cell = map->get_cell (x, y);
-					const Cell *other_cell = other->map->get_cell (x, y);
+			for (int x = 0; x < get_map_size_x (); x++) {
+				for (int y = 0; y < get_map_size_y (); y++) {
+					const Cell *cell = get_cell (x, y);
+					const Cell *other_cell = other->get_cell (x, y);
 					if (!cell->equals (other_cell)) return false;
 				}
 			}
@@ -145,14 +162,16 @@ namespace Game1 {
 		}
 
 		StateImplementation *clone () const {
-			StateImplementation *new_state = new StateImplementation (map->get_sizex (), map->get_sizey ());
-			for (int x = 0; x < map->get_sizex (); x++) {
-				for (int y = 0; y < map->get_sizey (); y++) {
-					new_state->map->set_cell (x, y, map->get_cell (x, y)->clone ());
+			StateImplementation *new_state = new StateImplementation (original ? original : this);
+			new_state->cass = cass;
+			for (int x = 0; x < get_map_size_x (); x++) {
+				for (int y = 0; y < get_map_size_y (); y++) {
+					const Cell *cell = get_cell (x, y);
+					if (cell) {
+						new_state->set_cell (x, y, cell->clone ());
+					}
 				}
 			}
-			new_state->cass = cass;
-
 			return new_state;
 		}
 
@@ -166,7 +185,7 @@ namespace Game1 {
 		}
 
 		virtual Hash get_hash () const {
-			return cass.x + map->get_sizex () * cass.y;
+			return cass.x + get_map_size_x () * cass.y;
 		}
 
 		virtual bool has_won () const {
@@ -187,7 +206,7 @@ namespace Game1 {
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const EmptyCell *cell) const { return true; }
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const { return true; }
 	};
 
 	struct WallCell : Cell {
@@ -197,7 +216,7 @@ namespace Game1 {
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const WallCell *cell) const { return true; }
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const { return false; }
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const { return false; }
 	};
 
 	struct TrapCell : Cell {
@@ -207,7 +226,7 @@ namespace Game1 {
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const TrapCell *cell) const { return true; }
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const { return true; }
 		virtual void pass (StateImplementation *state, int incoming_dir){
 			state->get_cass()->dead = true;
 		}
@@ -240,10 +259,10 @@ namespace Game1 {
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const PushableBlockCell *cell) const { return block_below->equals (cell->block_below); }
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const {
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const {
 			int newx = x + dirs[incoming_dir][0];
 			int newy = y + dirs[incoming_dir][1];
-			return (map->get_cell (newx, newy)->can_pass (map, incoming_dir));
+			return (state->get_cell (newx, newy)->can_pass (state, incoming_dir));
 		}
 
 		virtual void pass (StateImplementation *state, int incoming_dir) {
@@ -276,7 +295,7 @@ namespace Game1 {
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const DoorCell *cell) const { return open == cell->open; }
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const { return open; }
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const { return open; }
 
 		virtual void toggle () {
 			open = !open;
@@ -292,7 +311,7 @@ namespace Game1 {
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const TriggerCell *cell) const { return true; }
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const { return true; }
 		virtual void pass (StateImplementation *state, int incoming_dir) {
 			state->get_cell (door_x, door_y)->toggle ();
 		}
@@ -305,7 +324,7 @@ namespace Game1 {
 		virtual bool equals (const Cell *cell) const { return cell->equals (this); }
 		virtual bool equals (const GoalCell *cell) const { return true; }
 
-		virtual bool can_pass (const Map *map, int incoming_dir) const { return true; }
+		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const { return true; }
 		virtual void pass (StateImplementation *state, int incoming_dir) {
 			state->get_cass ()->won = true;
 		}
@@ -314,16 +333,20 @@ namespace Game1 {
 	Map::~Map () {
 		for (int x = 0; x < sizex; x++) {
 			for (int y = 0; y < sizey; y++) {
-				delete get_cell (x, y);
+				Cell *cell = get_cell (x, y);
+				if (cell)
+					delete cell;
 			}
 		}
-		delete cells;
+		delete []cells;
 	}
 
 	StateImplementation::StateImplementation (const char *filename) {
 		FILE *f;
 		int width, height;
 		char *textmap;
+
+		original = NULL;
 
 		f = fopen (filename, "rt");
 		if (!f) {
@@ -334,37 +357,37 @@ namespace Game1 {
 			printf ("Could not read map width & height from file\n");
 			throw 0;
 		}
-		map = new Map (width, height);
+		diffmap = new Map (width, height);
 
 		textmap = new char[width * height];
-		for (int y = 0; y < map->get_sizey (); y++) {
-			for (int x = 0; x < map->get_sizex (); x++) {
+		for (int y = 0; y < get_map_size_y (); y++) {
+			for (int x = 0; x < get_map_size_x (); x++) {
 				fscanf (f, "%c", textmap + x * height + y);
 			}
 			fscanf (f, "\n");
 		}
 		fclose (f);
 
-		for (int y = 0; y < map->get_sizey (); y++) {
-			for (int x = 0; x < map->get_sizex (); x++) {
+		for (int y = 0; y < get_map_size_y (); y++) {
+			for (int x = 0; x < get_map_size_x (); x++) {
 				char c = textmap[x * height + y];
 				switch (c) {
-				case '#': map->set_cell (x, y, new WallCell (x, y)); break;
+				case '#': diffmap->set_cell (x, y, new WallCell (x, y)); break;
 				case '@': cass.x = x; cass.y = y; // Deliverate fallthrough
-				case '.': map->set_cell (x, y, new EmptyCell (x, y)); break;
-				case '^': map->set_cell (x, y, new TrapCell (x, y)); break;
-				case '%': map->set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
-				case '*': map->set_cell (x, y, new GoalCell (x, y)); break;
+				case '.': diffmap->set_cell (x, y, new EmptyCell (x, y)); break;
+				case '^': diffmap->set_cell (x, y, new TrapCell (x, y)); break;
+				case '%': diffmap->set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
+				case '*': diffmap->set_cell (x, y, new GoalCell (x, y)); break;
 				default:
 					if (c >= 'a' && c <= 'z') {
 						int id = c - 'a';
-						for (int sx = 0; sx < map->get_sizex (); sx++) {
-							for (int sy = 0; sy < map->get_sizey (); sy++) {
+						for (int sx = 0; sx < get_map_size_x (); sx++) {
+							for (int sy = 0; sy < get_map_size_y (); sy++) {
 								char sc = textmap[sx * height + sy];
 								if (sc == 'A' + id) {
 									DoorCell *door = new DoorCell (sx, sy, false);
-									map->set_cell (sx, sy, door);
-									map->set_cell (x, y, new TriggerCell (x, y, sx, sy));
+									diffmap->set_cell (sx, sy, door);
+									diffmap->set_cell (x, y, new TriggerCell (x, y, sx, sy));
 								}
 							}
 						}
@@ -377,14 +400,14 @@ namespace Game1 {
 				}
 			}
 		}
-		delete textmap;
+		delete []textmap;
 
 		cass.dead = false;
 		cass.won = false;
 	}
 
 	StateImplementation::~StateImplementation () {
-		delete map;
+		delete diffmap;
 	}
 
 	bool StateImplementation::can_input (Input input_code) const {
@@ -406,7 +429,7 @@ namespace Game1 {
 		if (!cass.dead && !cass.won && dir > -1) {
 			int new_x = cass.x + dirs[dir][0];
 			int new_y = cass.y + dirs[dir][1];
-			if (map->get_cell (new_x, new_y)->can_pass (map, dir)) return true;
+			if (get_cell (new_x, new_y)->can_pass (this, dir)) return true;
 		}
 		return false;
 	}
@@ -430,10 +453,10 @@ namespace Game1 {
 		if (!cass.dead && !cass.won && dir > -1) {
 			int new_x = cass.x + dirs[dir][0];
 			int new_y = cass.y + dirs[dir][1];
-			if (map->get_cell (new_x, new_y)->can_pass (map, dir)) {
+			if (get_cell (new_x, new_y)->can_pass (this, dir)) {
 				cass.x = new_x;
 				cass.y = new_y;
-				map->get_cell (new_x, new_y)->pass (this, dir);
+				get_cell (new_x, new_y)->pass (this, dir);
 			}
 		}
 	}
