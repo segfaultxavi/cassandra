@@ -164,9 +164,11 @@ namespace Game1 {
 		StateImplementation *clone () const {
 			StateImplementation *new_state = new StateImplementation (original ? original : this);
 			new_state->cass = cass;
+			if (!original)
+				return new_state;
 			for (int x = 0; x < get_map_size_x (); x++) {
 				for (int y = 0; y < get_map_size_y (); y++) {
-					const Cell *cell = get_cell (x, y);
+					const Cell *cell = diffmap->get_cell (x, y);
 					if (cell) {
 						new_state->set_cell (x, y, cell->clone ());
 					}
