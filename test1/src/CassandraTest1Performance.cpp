@@ -7,6 +7,8 @@
 # include <Windows.h>
 # include <psapi.h>
 
+#pragma warning( disable : 4129 ) // 'E' unrecognized character escape sequence
+
 unsigned int used_memory () {
 	PROCESS_MEMORY_COUNTERS counter;
 	GetProcessMemoryInfo (GetCurrentProcess (), &counter, sizeof (counter));
@@ -51,7 +53,8 @@ int main (int argc, char *argv[]) {
 	Game1::g_renderer = &renderer;
 	
 	Game1::State *current_state = Game1::load_state ("test1-map.txt");
-	printf ("\E[2J");
+	if (!current_state)
+		return -1;
 	Cass::Solver *solver = current_state->get_solver ();
 	solver->add_start_point (current_state);
 	time = clock ();
@@ -61,8 +64,12 @@ int main (int argc, char *argv[]) {
 		i++;
 	}
 	time = clock () - time;
+#ifndef _WIN32
+	printf ("\E[2J");
 	current_state->render (1.f);
-	printf ("\E[%d;%dHMap size is %dx%d\n", current_state->get_map_size_y () + 2, 1, current_state->get_map_size_x (), current_state->get_map_size_y ());
+	printf ("\E[%d;%dH", current_state->get_map_size_y () + 2, 1);
+#endif
+	printf ("Map size is %dx%d\n", current_state->get_map_size_x (), current_state->get_map_size_y ());
 	printf ("Processed %d nodes in %gms and used %gMB\n", i, 1000 * time / (float)CLOCKS_PER_SEC, used_memory () / (float)(1024 * 1024));
 
 	delete current_state;

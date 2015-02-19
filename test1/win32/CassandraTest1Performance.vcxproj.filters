@@ -11,10 +11,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\CassandraTest1.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\contrib\glew-1.11.0\src\glew.c">
+    <ClCompile Include="..\src\CassandraTest1Performance.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\src\Game1.cpp">
