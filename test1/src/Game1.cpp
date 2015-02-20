@@ -121,7 +121,12 @@ namespace Game1 {
 		}
 
 		void set_cell (int x, int y, Cell *c) {
-			diffmap->set_cell (x, y, c);
+			if (original && original->get_cell (x, y)->equals (c)) {
+				delete c;
+				diffmap->set_cell (x, y, NULL);
+			} else {
+				diffmap->set_cell (x, y, c);
+			}
 		}
 
 		int get_map_size_x () const { return diffmap->get_sizex (); }
@@ -280,11 +285,11 @@ namespace Game1 {
 			}
 
 			Cell *new_below = state->get_cell (newx, newy);
-			state->set_cell (newx, newy, this);
 			state->set_cell (x, y, block_below);
 			block_below = new_below;
 			x = newx;
 			y = newy;
+			state->set_cell (newx, newy, this); // set_cell might delete 'this'
 		}
 	};
 
