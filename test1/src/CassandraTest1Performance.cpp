@@ -72,6 +72,11 @@ int main (int argc, char *argv[]) {
 	printf ("Map size is %dx%d\n", current_state->get_map_size_x (), current_state->get_map_size_y ());
 	printf ("Processed %d nodes in %gms and used %gMB\n", i, 1000 * time / (float)CLOCKS_PER_SEC, used_memory () / (float)(1024 * 1024));
 
+	time = clock ();
+	solver->calc_view_state ();
+	time = clock () - time;
+	printf ("Solved view states in %gms\n", 1000 * time / (float)CLOCKS_PER_SEC);
+
 	delete current_state;
 	delete solver;
 
