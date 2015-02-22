@@ -158,6 +158,10 @@ namespace Game1 {
 			const StateImplementation *other = (const StateImplementation *)virt_other;
 			for (int x = 0; x < get_map_size_x (); x++) {
 				for (int y = 0; y < get_map_size_y (); y++) {
+					if (diffmap->get_cell (x, y) == NULL && other->diffmap->get_cell (x, y) == NULL)
+						continue;
+					if (diffmap->get_cell (x, y) == NULL || other->diffmap->get_cell (x, y) == NULL)
+						return false;
 					const Cell *cell = get_cell (x, y);
 					const Cell *other_cell = other->get_cell (x, y);
 					if (!cell->equals (other_cell)) return false;
