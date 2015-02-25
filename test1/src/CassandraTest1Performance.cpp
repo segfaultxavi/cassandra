@@ -80,5 +80,10 @@ int main (int argc, char *argv[]) {
 	delete current_state;
 	delete solver;
 
-	getchar ();
+	if (argc > 1) {
+		printf ("Press any key\n");
+		getchar ();
+	}
+
+	return 0;
 }
