@@ -81,7 +81,7 @@ int main (int argc, char *argv[]) {
 	delete solver;
 
 	if (argc > 1) {
-		printf ("Press any key\n");
+		printf ("Press ENTER\n");
 		getchar ();
 	}
 
