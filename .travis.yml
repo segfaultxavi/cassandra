@@ -16,6 +16,6 @@ addons:
       name: "segfaultxavi/cassandra"
       description: "Build submitted via Travis CI"
     notification_email: xavierartigas@yahoo.es
-    build_command_prepend: "./configure; make clean"
+    build_command_prepend: "autoreconf -fi && ./configure && make clean"
     build_command:   "make"
     branch_pattern: coverity_scan
