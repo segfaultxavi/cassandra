@@ -195,7 +195,7 @@ namespace Cass {
 	public:
 		SolverImplementation (int num_hash_buckets, int num_transitions) :
 				num_hash_buckets (num_hash_buckets), num_transitions (num_transitions),
-				incomplete_head (NULL), incomplete_tail (NULL) {
+				incomplete_head (NULL), incomplete_tail (NULL), current_node (NULL) {
 			node_hash = new StateNode*[num_hash_buckets];
 			memset (node_hash, 0, num_hash_buckets * sizeof (StateNode *));
 		}

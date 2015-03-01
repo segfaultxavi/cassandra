@@ -9,26 +9,27 @@
 
 #pragma warning( disable : 4129 ) // 'E' unrecognized character escape sequence
 
-unsigned int used_memory () {
+size_t used_memory () {
 	PROCESS_MEMORY_COUNTERS counter;
 	GetProcessMemoryInfo (GetCurrentProcess (), &counter, sizeof (counter));
-	return (unsigned int)counter.PeakWorkingSetSize;
+	return (size_t)counter.PeakWorkingSetSize;
 }
 
 #else
 
 # include <unistd.h>
 
-unsigned int used_memory () {
+size_t used_memory () {
 	size_t size = 0;
-    FILE *file = fopen("/proc/self/statm", "r");
-    if (file) {
-        unsigned long vm = 0;
-        fscanf (file, "%ld", &vm);
-        fclose (file);
-       size = (size_t)vm * getpagesize();
-    }
-    return size;
+	FILE *file = fopen("/proc/self/statm", "r");
+	if (file) {
+		unsigned long vm = 0;
+		if (fscanf (file, "%ld", &vm) != 1)
+			return 0;
+		fclose (file);
+		size = (size_t)vm * getpagesize();
+	}
+	return size;
 }
 
 #endif
@@ -81,8 +82,8 @@ int main (int argc, char *argv[]) {
 	delete solver;
 
 	if (argc > 1) {
-		printf ("Press ENTER\n");
-		getchar ();
+		printf ("Press ENTER");
+		printf ("%c", getchar ());
 	}
 
 	return 0;

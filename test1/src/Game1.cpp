@@ -34,6 +34,8 @@ namespace Game1 {
 		bool dead;
 		bool won;
 
+		Player () : x (0), y (0), dead (false), won (false) {}
+
 		bool equals (const Player *other) const {
 			return x == other->x && y == other->y && dead == other->dead && won == other->won;
 		}
@@ -368,14 +370,20 @@ namespace Game1 {
 			printf ("Could not read map width & height from file\n");
 			throw 0;
 		}
+		if (width < 0 || width > 100 || height < 0 || height > 100) {
+			printf ("Invalid map size %dx%d\n", width, height);
+			throw 0;
+		}
 		diffmap = new Map (width, height);
 
 		textmap = new char[width * height];
 		for (int y = 0; y < get_map_size_y (); y++) {
 			for (int x = 0; x < get_map_size_x (); x++) {
-				fscanf (f, "%c", textmap + x * height + y);
+				if (fscanf (f, "%c", &textmap[x * height + y]) != 1)
+					throw 0;
 			}
-			fscanf (f, "\n");
+			if (fscanf (f, "\n") != 0)
+				throw 0;
 		}
 		fclose (f);
 
@@ -403,7 +411,7 @@ namespace Game1 {
 							}
 						}
 					} else
-						if (c < 'A' && c > 'Z') {
+						if (c < 'A' || c > 'Z') {
 							printf ("Unknown char '%c' at %d, %d", c, x, y);
 							return;
 						}
