@@ -3,3 +3,19 @@ compiler:
   - gcc
 # Change this to your needs
 script: autoreconf -fi && ./configure && make
+
+env:
+  global:
+   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
+   #   via the "travis encrypt" command using the project repo's public key
+   - secure: "e4Xgwe2WPpxxaepXxiMcWGdaE9ZhAL6C7Mfo6y/pA6kc9zcIIxx8GaF8ULVoteO38hlCGafREy0yCOqBPOkU3/9mJ52J+Gp2SuBq4ZlmcoAJeNPY7o0Fm8CseBDU4d0KpUSrkZn6OO7jGFGuZ1YpTJWTKDqwtM2U1/s1sSgMZ3g="
+
+addons:
+  coverity_scan:
+    project:
+      name: "segfaultxavi/cassandra"
+      description: "Build submitted via Travis CI"
+    notification_email: xavierartigas@yahoo.es
+    build_command_prepend: "./configure; make clean"
+    build_command:   "make"
+    branch_pattern: coverity_scan
