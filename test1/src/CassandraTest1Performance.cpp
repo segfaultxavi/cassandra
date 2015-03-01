@@ -24,9 +24,10 @@ size_t used_memory () {
 	FILE *file = fopen("/proc/self/statm", "r");
 	if (file) {
 		unsigned long vm = 0;
-		if (fscanf (file, "%ld", &vm) != 1)
-			return 0;
+		int read = fscanf (file, "%ld", &vm);
 		fclose (file);
+		if (read != 1)
+			return 0;
 		size = (size_t)vm * getpagesize();
 	}
 	return size;

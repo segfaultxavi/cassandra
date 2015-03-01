@@ -377,6 +377,7 @@ namespace Game1 {
 		diffmap = new Map (width, height);
 
 		textmap = new char[width * height];
+		memset (textmap, '.', width * height);
 		for (int y = 0; y < get_map_size_y (); y++) {
 			for (int x = 0; x < get_map_size_x (); x++) {
 				if (fscanf (f, "%c", &textmap[x * height + y]) != 1)
@@ -413,7 +414,7 @@ namespace Game1 {
 					} else
 						if (c < 'A' || c > 'Z') {
 							printf ("Unknown char '%c' at %d, %d", c, x, y);
-							return;
+							throw 0;
 						}
 					break;
 				}
