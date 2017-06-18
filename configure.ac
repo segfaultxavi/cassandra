@@ -1,6 +1,13 @@
 AC_INIT([Cassandra], 1.0)
 AM_INIT_AUTOMAKE([foreign subdir-objects])
 AC_PROG_CXX
+AC_PROG_CC
 AC_PROG_RANLIB
+PKG_CHECK_MODULES(SDL, sdl2 >= 1.2.0, HAVE_SDL=yes, HAVE_SDL=no)
+AC_SUBST(SDL_LIBS)
+AC_SUBST(SDL_CFLAGS)
+PKG_CHECK_MODULES(GL, gl, HAVE_GL=yes, HAVE_GL=no)
+AC_SUBST(GL_LIBS)
+AC_SUBST(GL_CFLAGS)
 AC_CONFIG_FILES([Makefile lib/Makefile lib/src/Makefile test1/Makefile test1/src/Makefile])
 AC_OUTPUT

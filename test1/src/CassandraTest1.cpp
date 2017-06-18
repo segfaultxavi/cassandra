@@ -1,7 +1,9 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
+#ifdef _WIN32
 #include <crtdbg.h>
+#endif
 #include <stdio.h>
 #include <memory.h>
 #include <GL/glew.h>
@@ -59,7 +61,9 @@ public:
 };
 
 int main (int argc, char *argv[]) {
+#ifdef _WIN32
 	_CrtSetDbgFlag (_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
 
 	if (SDL_Init (SDL_INIT_EVERYTHING) != 0) {
 		printf ("SDL Init error: %s\n", SDL_GetError ());
@@ -98,7 +102,7 @@ int main (int argc, char *argv[]) {
 	glOrtho (0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, -1, 1);
 
 	/* Load tiles and add ALPHA channel */
-	SDL_Surface *tiles = SDL_LoadBMP ("..\\tiles.bmp");
+	SDL_Surface *tiles = SDL_LoadBMP ("../tiles.bmp");
 	if (!tiles) {
 		printf ("SDL_LoadBMP Error: %s\n", SDL_GetError ());
 	}
@@ -135,7 +139,7 @@ int main (int argc, char *argv[]) {
 
 	int max_depth = 6;
 	bool show_ghosts = true;
-	Game1::State *current_state = Game1::load_state ("..\\map1.txt");
+	Game1::State *current_state = Game1::load_state ("../map1.txt");
 	Cass::Solver *solver = current_state->get_solver ();
 	solver->add_start_point (current_state);
 
@@ -160,7 +164,7 @@ int main (int argc, char *argv[]) {
 		}
 
 		if (pending) {
-			Game1::Input input = Game1::Input::NONE;
+			Game1::Input input = Game1::NONE;
 			switch (e.type) {
 			case SDL_QUIT:
 				quit = true;
@@ -180,16 +184,16 @@ int main (int argc, char *argv[]) {
 					max_depth = max_depth > 1 ? max_depth - 1 : max_depth;
 					break;
 				case SDLK_UP:
-					input = Game1::Input::UP;
+					input = Game1::UP;
 					break;
 				case SDLK_DOWN:
-					input = Game1::Input::DOWN;
+					input = Game1::DOWN;
 					break;
 				case SDLK_LEFT:
-					input = Game1::Input::LEFT;
+					input = Game1::LEFT;
 					break;
 				case SDLK_RIGHT:
-					input = Game1::Input::RIGHT;
+					input = Game1::RIGHT;
 					break;
 				default:
 					break;
@@ -197,7 +201,7 @@ int main (int argc, char *argv[]) {
 			default:
 				break;
 			}
-			if (input != Game1::Input::NONE) {
+			if (input != Game1::NONE) {
 				if (current_state->can_input (input)) {
 					current_state->input (input);
 					solver->update (input);
