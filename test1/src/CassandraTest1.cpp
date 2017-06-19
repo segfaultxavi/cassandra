@@ -105,6 +105,7 @@ int main (int argc, char *argv[]) {
 	SDL_Surface *tiles = SDL_LoadBMP ("../tiles.bmp");
 	if (!tiles) {
 		printf ("SDL_LoadBMP Error: %s\n", SDL_GetError ());
+		exit (-1);
 	}
 	GLuint tiles_tex;
 	GLubyte *raw = (GLubyte *)malloc (tiles->w * tiles->h * 4);
