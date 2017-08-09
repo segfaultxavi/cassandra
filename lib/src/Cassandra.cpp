@@ -209,7 +209,7 @@ namespace Cass {
 					delete tmp;
 				}
 			}
-			delete node_hash;
+			delete[] node_hash;
 		}
 
 		void add_start_point (State *state) {
