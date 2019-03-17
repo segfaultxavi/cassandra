@@ -393,7 +393,7 @@ namespace Game1 {
 				char c = textmap[x * height + y];
 				switch (c) {
 				case '#': diffmap->set_cell (x, y, new WallCell (x, y)); break;
-				case '@': cass.x = x; cass.y = y; // Deliverate fallthrough
+				case '@': cass.x = x; cass.y = y; // Deliberate fallthrough
 				case '.': diffmap->set_cell (x, y, new EmptyCell (x, y)); break;
 				case '^': diffmap->set_cell (x, y, new TrapCell (x, y)); break;
 				case '%': diffmap->set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
