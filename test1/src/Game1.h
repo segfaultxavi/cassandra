@@ -33,7 +33,7 @@ namespace Game1 {
 	// This represents the game state. Applications use this interface to interact with the game.
 	class State : public Cass::State {
 	public:
-		State (const char *filename);
+		State (const char *filename) {}
 		State () {}
 		virtual ~State () {}
 
