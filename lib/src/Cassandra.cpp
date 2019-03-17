@@ -136,7 +136,7 @@ namespace Cass {
 
 	int StateNode::NUM_TRANSITIONS;
 
-	class SolverImplementation : public Solver {
+	class FullSolver : public Solver {
 	private:
 		int num_hash_buckets;
 		int num_transitions;
@@ -193,14 +193,14 @@ namespace Cass {
 		}
 
 	public:
-		SolverImplementation (int num_hash_buckets, int num_transitions) :
+		FullSolver (int num_hash_buckets, int num_transitions) :
 				num_hash_buckets (num_hash_buckets), num_transitions (num_transitions),
 				incomplete_head (NULL), incomplete_tail (NULL), current_node (NULL) {
 			node_hash = new StateNode*[num_hash_buckets];
 			memset (node_hash, 0, num_hash_buckets * sizeof (StateNode *));
 		}
 
-		~SolverImplementation () {
+		~FullSolver () {
 			for (int i = 0; i < num_hash_buckets; i++) {
 				StateNode *node = node_hash[i];
 				while (node) {
@@ -268,9 +268,9 @@ namespace Cass {
 	};
 
 
-	Solver *get_solver (int num_hash_buckets, int num_transitions) {
+	Solver *get_full_solver (int num_hash_buckets, int num_transitions) {
 		StateNode::NUM_TRANSITIONS = num_transitions;
-		return new SolverImplementation (num_hash_buckets, num_transitions);
+		return new FullSolver (num_hash_buckets, num_transitions);
 	}
 
 } // namespace Cass

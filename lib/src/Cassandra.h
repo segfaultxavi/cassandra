@@ -37,7 +37,7 @@ namespace Cass {
 		virtual void render (int distance) = 0;
 	};
 
-	Solver *get_solver (int num_hash_buckets, int num_inputs);
+	Solver *get_full_solver (int num_hash_buckets, int num_inputs);
 }
 
 #endif

@@ -135,7 +135,7 @@ namespace Game1 {
 		int get_map_size_y () const { return diffmap->get_sizey (); }
 
 		Cass::Solver *get_solver () {
-			return Cass::get_solver (get_map_size_x () * get_map_size_y (), NUM_INPUTS);
+			return Cass::get_full_solver (get_map_size_x () * get_map_size_y (), NUM_INPUTS);
 		}
 
 	private:
