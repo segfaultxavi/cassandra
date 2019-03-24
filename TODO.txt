@@ -1,12 +1,25 @@
 Cassandra library:
-- This is starting to be too slow:
-  - Optimize also calc_view_state ()
-- Limit the depth of scanning, so the goal is only found when you are _close_ to it. This saves memory too, of course.
-- Process first nodes in the incomplete list closer to the Player -> Does the algorithm still hold?
-  We have assumed that unprocessed nodes are always further away.
-- Do not show GOAL at all?
-- Only show one ghost at a time so it is less confusing?
-- Fix overlapping ghosts.
+- Better performance tests (bigger map, or repeated runs)
+- Optimizations:
+  - Do not store complete maps, since most diffs are very small.
+  - Instead of NULL, diffmaps can point directly to the ancestor (marking that they do not own the cell).
+    This saves going back to the original maps.
+  - The lib can provide memory allocating functions, wrapping StateNodes around game-states.
+    Higher memory coherence and once less ptr indirection.
+  - StateNodes have all the same size, maybe use a slice allocator?
+  - This is starting to be too slow:
+    - Optimize also calc_view_state ()
+    - Process first nodes in the incomplete list closer to the Player -> Does the algorithm still hold?
+      We have assumed that unprocessed nodes are always further away.
+- Functionality changes:
+  - Only show ghosts at a certain temporal distance, which can be controlled by player.
+    When you enable ghosts, UP and DOWN control how far into the future you see.
+    No need to calculate whole tree.
+  - Limit the depth of scanning, so the goal is only found when you are _close_ to it (similar to above).
+    This saves memory too, of course.
+  - Do not show GOAL at all (no need to backtrack it)
+  - Only show one ghost at a time so it is less confusing?
+  - Fix overlapping ghosts.
 
 Cassandra test 1: Discrete in time and space, position is matrix-based, time is controlled by player
 - Render blocks only when in LOS (or render darker)
@@ -20,3 +33,5 @@ Cassanda test 2: Discrete in time and space, position is matrix-based, time is i
 Cassandra test 3: Continuous in time and space, matrix map but free-running player and objects (positions not limited to matrix)
 - Rolling balls
 - Free-running Cass
+
+Cassandra test 4: Now in 3D. Position and viewing direction will have to be quantized.
