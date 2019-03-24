@@ -54,7 +54,7 @@ int main (int argc, char *argv[]) {
     Renderer renderer;
 	Game1::g_renderer = &renderer;
 	
-	Game1::State *current_state = Game1::load_state ("../map1.txt");
+	Game1::State *current_state = Game1::load_state ("../src/test1-map.txt");
 	if (!current_state)
 		return -1;
 	Cass::Solver *solver = current_state->get_solver ();
