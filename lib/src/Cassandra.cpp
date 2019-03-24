@@ -42,7 +42,7 @@ namespace Cass {
 
 		State::Progress calc_view_state (int new_steps) {
 			// This node has already been processed
-			if (steps < new_steps)
+			if (steps <= new_steps)
 				return State::DEAD_END;
 
 			steps = new_steps;
@@ -70,7 +70,7 @@ namespace Cass {
 
 		int find_minimum_goal_distance (int new_steps) const {
 			// This node has already been processed
-			if (steps < new_steps || !transitions)
+			if (steps <= new_steps || !transitions)
 				return MAX_STEPS;
 
 			if (state->has_won ()) {
@@ -92,7 +92,7 @@ namespace Cass {
 
 		bool calc_goal_path (int new_steps, int min_steps) {
 			// This node has already been processed
-			if (steps < new_steps || !transitions)
+			if (steps <= new_steps || !transitions)
 				return false;
 
 			if (state->has_won () && steps == min_steps) {
