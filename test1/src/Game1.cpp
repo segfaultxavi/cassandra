@@ -222,6 +222,11 @@ namespace Game1 {
 		virtual bool can_pass (const StateImplementation *state, int incoming_dir) const { return true; }
 	};
 
+	struct FakeWall : EmptyCell {
+		FakeWall (int x, int y) : EmptyCell (x, y) {}
+		virtual void render (float alpha) const { g_renderer->renderWallCell (x, y, alpha); }
+	};
+
 	struct WallCell : Cell {
 		WallCell (int x, int y) : Cell (x, y) {}
 		virtual void render (float alpha) const { g_renderer->renderWallCell (x, y, alpha); }
@@ -395,6 +400,7 @@ namespace Game1 {
 				case '#': diffmap->set_cell (x, y, new WallCell (x, y)); break;
 				case '@': cass.x = x; cass.y = y; // Deliberate fallthrough
 				case '.': diffmap->set_cell (x, y, new EmptyCell (x, y)); break;
+				case '|': diffmap->set_cell (x, y, new FakeWall (x, y)); break;
 				case '^': diffmap->set_cell (x, y, new TrapCell (x, y)); break;
 				case '%': diffmap->set_cell (x, y, new PushableBlockCell (x, y, new EmptyCell (x, y))); break;
 				case '*': diffmap->set_cell (x, y, new GoalCell (x, y)); break;
