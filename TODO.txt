@@ -1,5 +1,4 @@
 Cassandra library:
-- Better performance tests (bigger map, or repeated runs)
 - Optimizations:
   - Do not store complete maps, since most diffs are very small.
   - Instead of NULL, diffmaps can point directly to the ancestor (marking that they do not own the cell).

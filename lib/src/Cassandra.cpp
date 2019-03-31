@@ -17,15 +17,26 @@
 
 namespace Cass {
 
+	// A StateNode wraps a game State and adds pointers to possible other states,
+	// linked lists, and other non-game info.
 	struct StateNode {
 		static const int MAX_STEPS = 1000000;
 		static int NUM_TRANSITIONS;
 
+		// Nodes where the player can go from here.
+		// Array of NUM_TRANSITION StateNode*.
+		// If NULL, this StateNode has not been processed yet (so it should be in the
+		// incomplete_list).
 		StateNode **transitions;
+		// Game state we are wrapping
 		State *state;
+		// Other StateNodes in this same hash bucket
 		StateNode *next_in_hash_bucket;
+		// Other StateNodes in the incomplete list.
 		StateNode *next_in_incomplete_list;
+		// Distance to a given node. Depends on the calculation currently being performed.
 		int steps;
+		// Progress state. Used for some renderers (display only nodes which go somewhere, for example)
 		State::Progress progress;
 
 		// StateNode takes ownership of the state
@@ -40,6 +51,7 @@ namespace Cass {
 				delete[] transitions;
 		}
 
+		// Recursively calculate the Progress of all StateNodes connected to this one
 		State::Progress calc_view_state (int new_steps) {
 			// This node has already been processed
 			if (steps <= new_steps)
@@ -68,6 +80,8 @@ namespace Cass {
 			return progress;
 		}
 
+		// Return the minimum number of steps required to reach the goal
+		// Or MAX_STEPS if goal unreachable or not found yet.
 		int find_minimum_goal_distance (int new_steps) const {
 			// This node has already been processed
 			if (steps <= new_steps || !transitions)
@@ -90,6 +104,7 @@ namespace Cass {
 			return min_dist;;
 		}
 
+		// Mark the GOAL Progress of all StateNodes in the path to the Goal
 		bool calc_goal_path (int new_steps, int min_steps) {
 			// This node has already been processed
 			if (steps <= new_steps || !transitions)
@@ -113,6 +128,7 @@ namespace Cass {
 			return false;
 		}
 
+		// Recursively render all states at distance max_steps from the current state
 		void render_ghosts (int steps, int max_steps, const StateNode *current) {
 			if (steps > this->steps)
 				return;
@@ -136,16 +152,27 @@ namespace Cass {
 
 	int StateNode::NUM_TRANSITIONS;
 
+	// This class incrementally builds a map of ALL possible game movements (states).
+	// It can also mark states with a Progress value (interesting or not interesting, for example)
+	// and once a goal is reached, it can mark the path to the goal too.
+	// It can also render all states.
 	class FullSolver : public Solver {
 	private:
+		// Size of the hash table (set by app)
 		int num_hash_buckets;
+		// Number of possible transitions out of any node (set by app)
 		int num_transitions;
+		// Hash table that stores all processed nodes for quick comparison
 		StateNode **node_hash;
+		// Incomplete nodes list that stores nodes waiting to be processed
 		StateNode *incomplete_head;
 		StateNode *incomplete_tail;
-
+		// Node the player is currently in
 		StateNode *current_node;
 
+		// Find a state in the hash os processed states
+		// The actual comparison is performed by the app's state since
+		// we know nothing about state internals
 		StateNode *find (State *state) {
 			State::Hash hash = state->get_hash ();
 			StateNode *tmp = node_hash[hash];
@@ -156,6 +183,7 @@ namespace Cass {
 			return NULL;
 		}
 
+		// Clears the Process flag (view state) of all known states
 		void reset_view_state () {
 			for (int i = 0; i < num_hash_buckets; i++) {
 				StateNode *node = node_hash[i];
