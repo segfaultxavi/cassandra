@@ -18,12 +18,11 @@
 #endif
 #endif  // _DEBUG
 
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 640
+#define CELL_WIDTH 64
+#define CELL_HEIGHT 64
 
 extern unsigned char tiles_data[];
 int tiles_width, tiles_height;
-int cell_width, cell_height;
 
 Game1::Renderer *Game1::g_renderer;
 
@@ -34,7 +33,7 @@ class Renderer : public Game1::Renderer {
 		for (int sx = 0; sx < 2; sx++) {
 			for (int sy = 0; sy < 2; sy++) {
 				glTexCoord2f ((tilex + sx) * 32 / (GLfloat)tiles_width, (tiley + sy) * 32 / (GLfloat)tiles_height);
-				glVertex2i ((x + sx) * cell_width, (y + sy) * cell_height);
+				glVertex2i ((x + sx) * CELL_WIDTH, (y + sy) * CELL_HEIGHT);
 			}
 		}
 		glEnd ();
@@ -48,16 +47,16 @@ public:
 		else
 		render_tile (x, y, 4, 0, alpha);
 	}
-	void renderEmptyCell (int x, int y, float alpha) { render_tile (x, y, 2, 6, alpha); }
-	void renderWallCell (int x, int y, float alpha)  { render_tile (x, y, 0, 5, alpha); }
-	void renderTrapCell (int x, int y, float alpha)  { render_tile (x, y, 3, 2, alpha); }
+	void renderEmptyCell (int x, int y, float alpha) { render_tile (x, y, 8, 6, alpha); }
+	void renderWallCell (int x, int y, float alpha)  { render_tile (x, y, 2, 9, alpha); }
+	void renderTrapCell (int x, int y, float alpha)  { renderEmptyCell (x, y, alpha);  render_tile (x, y, 3, 2, alpha); }
 	void renderDoorCell (int x, int y, bool open, float alpha)  {
 		if (open) render_tile (x, y, 4, 5, alpha);
 		else render_tile (x, y, 3, 5, alpha);
 	}
-	void renderTriggerCell (int x, int y, float alpha)  { render_tile (x, y, 2, 2, alpha); }
-	void renderPushableBlockCell (int x, int y, float alpha)  { render_tile (x, y, 2, 9, alpha); }
-	void renderGoalCell (int x, int y, float alpha)  { render_tile (x, y, 0, 2, alpha); }
+	void renderTriggerCell (int x, int y, float alpha) { renderEmptyCell (x, y, alpha);  render_tile (x, y, 2, 2, alpha); }
+	void renderPushableBlockCell (int x, int y, float alpha)  { render_tile (x, y, 2, 7, alpha); }
+	void renderGoalCell (int x, int y, float alpha)  { render_tile (x, y, 7, 5, alpha); }
 };
 
 int main (int argc, char *argv[]) {
@@ -71,7 +70,7 @@ int main (int argc, char *argv[]) {
 	}
 
 
-	SDL_Window *win = SDL_CreateWindow ("Cassandra Test 1", 50, 50, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+	SDL_Window *win = SDL_CreateWindow ("Cassandra Test 1", 50, 50, 100, 100, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
 	if (win == NULL){
 		printf ("SDL_CreateWindow Error: %s\n", SDL_GetError ());
 		SDL_Quit ();
@@ -96,10 +95,6 @@ int main (int argc, char *argv[]) {
 	printf ("GLVendor: %s\n", glGetString (GL_VENDOR));
 	printf ("GLVersion: %s\n", glGetString (GL_VERSION));
 	printf ("GLSLVersion: %s\n", glGetString (GL_SHADING_LANGUAGE_VERSION));
-
-	glViewport (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-	glMatrixMode (GL_PROJECTION);
-	glOrtho (0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, -1, 1);
 
 	/* Load tiles and add ALPHA channel */
 	SDL_Surface *tiles = SDL_LoadBMP ("../tiles.bmp");
@@ -144,8 +139,13 @@ int main (int argc, char *argv[]) {
 	Cass::Solver *solver = current_state->get_solver ();
 	solver->add_start_point (current_state);
 
-	cell_width = SCREEN_WIDTH / current_state->get_map_size_x ();
-	cell_height = SCREEN_HEIGHT / current_state->get_map_size_y ();
+	int win_width = CELL_WIDTH * current_state->get_map_size_x ();
+	int win_height = CELL_HEIGHT * current_state->get_map_size_y ();
+	SDL_SetWindowSize (win, win_width, win_height);
+
+	glViewport (0, 0, win_width, win_height);
+	glMatrixMode (GL_PROJECTION);
+	glOrtho (0, win_width, win_height, 0, -1, 1);
 
 	SDL_Event e;
 	bool quit = false;
